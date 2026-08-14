@@ -169,6 +169,8 @@ export class VerificationGateError extends Error {
   readonly gapKinds: VerificationGap["kind"][];
   readonly stage: VerificationGateStage;
   readonly gapCount: number;
+  /** Human-readable diagnostics appended to the UI message (fork build tag, config, flags). */
+  detail?: string;
 
   constructor(result: VerificationResult, initialScore: number, stage: VerificationGateStage) {
     super(verificationFailureMessage(result) ?? "Verification gate rejected summary");

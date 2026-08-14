@@ -14,7 +14,8 @@ export function formatCompactErrorForUi(error: unknown): string {
   if (error instanceof VerificationGateError) {
     const kinds = error.gapKinds.slice(0, 4).join(", ") || "unknown";
     return "Verification stopped apply at the " + error.stage + " gate: " + error.score + "/100, " + error.gapCount +
-      (error.gapCount === 1 ? " unresolved gap [" : " unresolved gaps [") + kinds + "]. " + DEBUG_HINT;
+      (error.gapCount === 1 ? " unresolved gap [" : " unresolved gaps [") + kinds + "]. " +
+      (error.detail ? "Diagnostics: " + error.detail + ". " : "") + DEBUG_HINT;
   }
   if (error instanceof YieldGateError) {
     const reason = error.reason === "target-miss" ? "target missed" : "saving below 10%";

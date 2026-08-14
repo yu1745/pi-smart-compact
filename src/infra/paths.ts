@@ -17,10 +17,17 @@
  */
 
 import path from "node:path";
+import os from "node:os";
 import { EXTRACTION_CACHE_PREFIX } from "../constants.ts";
 
+/**
+ * Real home directory. `process.env.HOME` is unset when Pi is launched from
+ * a GUI shortcut on Windows — falling back to "/tmp" there would silently
+ * redirect settings.json, caches, and run-locks to `C:\tmp`, making user
+ * config invisible. `os.homedir()` always resolves to the OS user profile.
+ */
 function home(): string {
-  return process.env.HOME ?? "/tmp";
+  return process.env.HOME ?? os.homedir();
 }
 
 /** Root pi agent directory (`~/.pi/agent`). */

@@ -4,7 +4,7 @@
 
 import fs from "node:fs";
 import type { CompactConfig, CompressionProfile, ChunkSummary, LlmChunk, StructuredExtraction, ExplorationReport, SessionType, SessionMessageEntry } from "../types.ts";
-import { DEFAULT_CONFIG, PROFILES, CONFIG_KEY, CONFIG_KEY_ALT, TRUNC } from "../constants.ts";
+import { DEFAULT_CONFIG, PROFILES, CONFIG_KEY, CONFIG_KEY_ALT, TRUNC, FORK_BUILD_TAG } from "../constants.ts";
 import * as log from "./logger.ts";
 import { settingsFile, defaultBackupDir } from "../infra/paths.ts";
 import { flattenToolCallBlock } from "./extraction.ts";
@@ -209,6 +209,7 @@ export function loadConfig(): CompactConfig {
     const sc = raw[CONFIG_KEY] ?? raw[CONFIG_KEY_ALT] ?? {};
     validateSmartCompactConfig(sc as Record<string, unknown>);
     const merged = { ...DEFAULT_CONFIG, ...sc } as CompactConfig;
+    log.info("loadConfig build=" + FORK_BUILD_TAG + " settings=" + p + " allowUnverifiedApply=" + merged.allowUnverifiedApply);
     // Existing installs used only `profile`; preserve their behavior until
     // they opt into the new mode key.
     if (!("mode" in sc) && "profile" in sc) {

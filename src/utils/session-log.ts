@@ -18,6 +18,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import os from "node:os";
 import { StringDecoder } from "node:string_decoder";
 import { extractText, TRUNCATE_RE } from "./extraction.ts";
 import type { LlmMessage, SessionMessageEntry } from "../types.ts";
@@ -159,7 +160,7 @@ function findLogInDirectory(directory: string, sessionId: string): string | null
  * We try the bare id first, then the glob suffix pattern.
  */
 function findSessionLogFile(sessionId: string, cwd?: string): string | null {
-  const home = process.env.HOME ?? "/tmp";
+  const home = process.env.HOME ?? os.homedir();
   const now = Date.now();
   const directDirectory = cwd ? sessionDirectoryForCwd(cwd) : null;
   const cacheKey = sessionId + "\0" + (directDirectory ?? "*");

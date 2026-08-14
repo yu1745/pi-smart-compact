@@ -28,6 +28,7 @@ import {
 } from "../../phases/verify.ts";
 import { yieldGateFailureReason, estimateCompactionYield, YieldGateError } from "../../domain/yield-gate.ts";
 import { findSection, summaryEvidenceLine } from "../../domain/summary-parse.ts";
+import { gateDiagnostics } from "./verify.ts";
 
 export function buildState(rc: VerifiedRc): StatedRc {
   const extraction = rc.extraction;
@@ -139,7 +140,9 @@ export function buildState(rc: VerifiedRc): StatedRc {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + postVerification.gaps.length + " unresolved post-state verification gap(s) accepted at " + postVerification.score + "/100", "warning");
     } else {
-      throw new VerificationGateError(postVerification, postInitialScore, "post-state");
+      const gateError = new VerificationGateError(postVerification, postInitialScore, "post-state");
+      gateError.detail = gateDiagnostics(rc);
+      throw gateError;
     }
   }
   rc.verificationProvenance = {

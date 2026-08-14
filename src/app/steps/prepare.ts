@@ -10,6 +10,8 @@ import type { RcBase, PreparedRc, ResolvedAuth } from "../run-context.ts";
 import { advance } from "../run-context.ts";
 import { effectiveBudget, MODE_POLICIES } from "../mode-policy.ts";
 import { DEFAULT_CONFIG } from "../../constants.ts";
+import { FORK_BUILD_TAG } from "../../constants.ts";
+import { settingsFile } from "../../infra/paths.ts";
 import { getProviderCaps } from "../../utils/tokens.ts";
 import { loadConfig } from "../../utils/helpers.ts";
 import { preparePreflightProfile } from "../preflight.ts";
@@ -24,6 +26,7 @@ export async function prepareRun(rc: RcBase): Promise<PreparedRc> {
   // config (manual /smart-compact command, agent_settled auto-trigger) resolve
   // it here, so allowUnverifiedApply takes effect on every entry path.
   rc.flags.forceApply = rc.flags.forceApply || !!config.allowUnverifiedApply;
+  log.info("run-start build=" + FORK_BUILD_TAG + " settings=" + settingsFile() + " allowUnverifiedApply=" + config.allowUnverifiedApply + " forceApply=" + rc.flags.forceApply);
   const { profileCfg, estimator, adapted, damageMedian } = preparePreflightProfile({
     cwd: rc.ctx.cwd,
     summaryModel: rc.summaryModel,

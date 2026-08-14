@@ -4,7 +4,7 @@
   <img src="https://raw.githubusercontent.com/alpertarhan/pi-smart-compact/main/docs/assets/banner.svg" alt="pi-smart-compact" width="860" />
 </a>
 
-> **Fork (yu1745) — v9.2.1-yu1745.2.** Adds an opt-in `allowUnverifiedApply`
+> **Fork (yu1745) — v9.2.1-yu1745.3.** Adds an opt-in `allowUnverifiedApply`
 > switch so runs stuck at the verification gate can proceed: config
 > `smartCompact.allowUnverifiedApply: true` (in `~/.pi/agent/settings.json`) or
 > env `SMART_COMPACT_FORCE_APPLY=1`. Works on **every** entry path (manual
@@ -14,8 +14,16 @@
 > `forced`, and the `requireApproval` screen still gates the actual apply.
 > The compaction-yield gate is also bypassed under the flag (provenance marked
 > `yieldForced`, with a warning), so an opted-in run is never refused solely
-> because a score/yield check failed. Also fixes the `smart_compact` tool path
-> not forwarding the resolved config to the pipeline. Upstream:
+> because a score/yield check failed.
+>
+> **9.2.1-yu1745.3 fixes**: the home directory now falls back to `os.homedir()`
+> when `HOME` is unset (Windows GUI launches) — previously settings, caches,
+> and run-locks silently went to `C:\tmp`, making `settings.json` config
+> invisible. Gate refusals now embed diagnostics (`build`, `settings` path,
+> `allowUnverifiedApply`, `forceApply`) directly in the error toast, and every
+> run logs a `run-start` line with the same values. Also fixes the
+> `smart_compact` tool path not forwarding the resolved config to the
+> pipeline. Upstream:
 > [alpertarhan/pi-smart-compact](https://github.com/alpertarhan/pi-smart-compact).
 
 [![CI](https://github.com/alpertarhan/pi-smart-compact/actions/workflows/ci.yml/badge.svg)](https://github.com/alpertarhan/pi-smart-compact/actions/workflows/ci.yml)

@@ -17,6 +17,17 @@ import * as log from "../../utils/logger.ts";
 import { MODE_POLICIES, modeFromLegacyProfile } from "../mode-policy.ts";
 import { assembleFallback } from "../../phases/synthesize.ts";
 import { resolveStageAuth } from "../stage-auth.ts";
+import { settingsFile } from "../../infra/paths.ts";
+import { FORK_BUILD_TAG } from "../../constants.ts";
+
+/** Diagnostics shown in the refusal toast so config misses are self-explaining. */
+export function gateDiagnostics(rc: SynthesizedRc): string {
+  return "build=" + FORK_BUILD_TAG +
+    " settings=" + settingsFile() +
+    " allowUnverifiedApply=" + rc.config?.allowUnverifiedApply +
+    " forceApply=" + rc.flags.forceApply +
+    " envForce=" + /^(?:1|true)$/i.test(process.env.SMART_COMPACT_FORCE_APPLY ?? "");
+}
 
 export async function verifyAndPatch(rc: SynthesizedRc): Promise<VerifiedRc> {
   const extraction = rc.extraction;
@@ -104,7 +115,9 @@ export async function verifyAndPatch(rc: SynthesizedRc): Promise<VerifiedRc> {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + verification.gaps.length + " unresolved verification gap(s) accepted at " + verification.score + "/100", "warning");
     } else {
-      throw new VerificationGateError(verification, initialScore, "post-synthesis");
+      const gateError = new VerificationGateError(verification, initialScore, "post-synthesis");
+      gateError.detail = gateDiagnostics(rc);
+      throw gateError;
     }
   }
   showProgressOverlay(rc.ctx, {

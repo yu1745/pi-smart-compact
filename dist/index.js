@@ -8,6 +8,7 @@ import { Type as Type2 } from "typebox";
 
 // src/constants.ts
 var VERSION = "9.2.1";
+var FORK_BUILD_TAG = "9.2.1-yu1745.3";
 var CHARS_PER_TOKEN = 3.8;
 var MIN_COMPACTION_SAVING_RATIO = 0.1;
 var ESTIMATOR_ROUNDING_TOLERANCE_TOKENS = 1;
@@ -586,8 +587,9 @@ import fs2 from "fs";
 
 // src/infra/paths.ts
 import path2 from "path";
+import os from "os";
 function home() {
-  return process.env.HOME ?? "/tmp";
+  return process.env.HOME ?? os.homedir();
 }
 function piAgentDir() {
   return path2.join(home(), ".pi", "agent");
@@ -2391,6 +2393,7 @@ function loadConfig() {
     const sc = raw[CONFIG_KEY] ?? raw[CONFIG_KEY_ALT] ?? {};
     validateSmartCompactConfig(sc);
     const merged = { ...DEFAULT_CONFIG, ...sc };
+    info("loadConfig build=" + FORK_BUILD_TAG + " settings=" + p + " allowUnverifiedApply=" + merged.allowUnverifiedApply);
     if (!("mode" in sc) && "profile" in sc) {
       merged.mode = sc.profile === "light" ? "thorough" : sc.profile;
     }
@@ -7096,6 +7099,7 @@ async function showRestoreAction(ctx, backupPath) {
 async function prepareRun(rc) {
   const config = rc.config ?? loadConfig();
   rc.flags.forceApply = rc.flags.forceApply || !!config.allowUnverifiedApply;
+  info("run-start build=" + FORK_BUILD_TAG + " settings=" + settingsFile() + " allowUnverifiedApply=" + config.allowUnverifiedApply + " forceApply=" + rc.flags.forceApply);
   const { profileCfg, estimator, adapted, damageMedian } = preparePreflightProfile({
     cwd: rc.ctx.cwd,
     summaryModel: rc.summaryModel,
@@ -7154,6 +7158,7 @@ function scrubLlmMessages(msgs, scrubber) {
 // src/utils/session-log.ts
 import * as fs7 from "fs";
 import * as path11 from "path";
+import os2 from "os";
 import { StringDecoder } from "string_decoder";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 function getSessionsDir() {
@@ -7212,7 +7217,7 @@ function findLogInDirectory(directory, sessionId) {
   return match ? path11.join(directory, match.name) : null;
 }
 function findSessionLogFile(sessionId, cwd) {
-  const home2 = process.env.HOME ?? "/tmp";
+  const home2 = process.env.HOME ?? os2.homedir();
   const now = Date.now();
   const directDirectory = cwd ? sessionDirectoryForCwd(cwd) : null;
   const cacheKey = sessionId + "\x00" + (directDirectory ?? "*");
@@ -9220,6 +9225,7 @@ class VerificationGateError extends Error {
   gapKinds;
   stage;
   gapCount;
+  detail;
   constructor(result, initialScore, stage) {
     super(verificationFailureMessage(result) ?? "Verification gate rejected summary");
     this.name = "VerificationGateError";
@@ -9774,6 +9780,9 @@ Return the COMPLETE corrected summary in the same format.`;
 }
 
 // src/app/steps/verify.ts
+function gateDiagnostics(rc) {
+  return "build=" + FORK_BUILD_TAG + " settings=" + settingsFile() + " allowUnverifiedApply=" + rc.config?.allowUnverifiedApply + " forceApply=" + rc.flags.forceApply + " envForce=" + /^(?:1|true)$/i.test(process.env.SMART_COMPACT_FORCE_APPLY ?? "");
+}
 async function verifyAndPatch(rc) {
   const extraction = rc.extraction;
   let summary = rc.finalSummary;
@@ -9861,7 +9870,9 @@ async function verifyAndPatch(rc) {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + verification.gaps.length + " unresolved verification gap(s) accepted at " + verification.score + "/100", "warning");
     } else {
-      throw new VerificationGateError(verification, initialScore, "post-synthesis");
+      const gateError = new VerificationGateError(verification, initialScore, "post-synthesis");
+      gateError.detail = gateDiagnostics(rc);
+      throw gateError;
     }
   }
   showProgressOverlay(rc.ctx, {
@@ -10020,7 +10031,9 @@ function buildState(rc) {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + postVerification.gaps.length + " unresolved post-state verification gap(s) accepted at " + postVerification.score + "/100", "warning");
     } else {
-      throw new VerificationGateError(postVerification, postInitialScore, "post-state");
+      const gateError = new VerificationGateError(postVerification, postInitialScore, "post-state");
+      gateError.detail = gateDiagnostics(rc);
+      throw gateError;
     }
   }
   rc.verificationProvenance = {
@@ -11009,7 +11022,7 @@ function compactText(error2) {
 function formatCompactErrorForUi(error2) {
   if (error2 instanceof VerificationGateError) {
     const kinds = error2.gapKinds.slice(0, 4).join(", ") || "unknown";
-    return "Verification stopped apply at the " + error2.stage + " gate: " + error2.score + "/100, " + error2.gapCount + (error2.gapCount === 1 ? " unresolved gap [" : " unresolved gaps [") + kinds + "]. " + DEBUG_HINT;
+    return "Verification stopped apply at the " + error2.stage + " gate: " + error2.score + "/100, " + error2.gapCount + (error2.gapCount === 1 ? " unresolved gap [" : " unresolved gaps [") + kinds + "]. " + (error2.detail ? "Diagnostics: " + error2.detail + ". " : "") + DEBUG_HINT;
   }
   if (error2 instanceof YieldGateError) {
     const reason = error2.reason === "target-miss" ? "target missed" : "saving below 10%";
