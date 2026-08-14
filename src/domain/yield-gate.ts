@@ -41,7 +41,8 @@ export class YieldGateError extends Error implements CompactionYieldEstimate {
   hardBoundaryAdjusted!: boolean;
 }
 
-export function verifyCompactionYield(
+/** Pure estimate builder — no gate logic, safe to call from force-apply paths. */
+export function estimateCompactionYield(
   totalTokens: number,
   summaryTokens: number,
   plan: CompactionWindowPlan,
@@ -49,7 +50,7 @@ export function verifyCompactionYield(
   const estimatedAfterTokens = plan.fixedContextTokens + plan.retainedTokens + summaryTokens;
   const estimatedSavedTokens = Math.max(0, totalTokens - estimatedAfterTokens);
   const estimatedYield = totalTokens > 0 ? estimatedSavedTokens / totalTokens : 0;
-  const estimate: CompactionYieldEstimate = {
+  return {
     plannedAfterTokens: plan.projectedAfterTokens,
     plannedSavedTokens: plan.projectedSavedTokens,
     plannedYield: plan.projectedYield,
@@ -63,11 +64,26 @@ export function verifyCompactionYield(
     relaxedSoftBoundaries: plan.relaxedSoftBoundaries,
     hardBoundaryAdjusted: plan.hardBoundaryAdjusted,
   };
-  if (estimatedAfterTokens > plan.targetAfterTokens + ESTIMATOR_ROUNDING_TOLERANCE_TOKENS) {
-    throw new YieldGateError("target-miss", estimate);
+}
+
+/** Single source of truth for the yield thresholds; returns the failure reason or null. */
+export function yieldGateFailureReason(estimate: CompactionYieldEstimate): YieldGateError["reason"] | null {
+  if (estimate.estimatedAfterTokens > estimate.targetAfterTokens + ESTIMATOR_ROUNDING_TOLERANCE_TOKENS) {
+    return "target-miss";
   }
-  if (estimatedYield < MIN_COMPACTION_SAVING_RATIO) {
-    throw new YieldGateError("insufficient-saving", estimate);
+  if (estimate.estimatedYield < MIN_COMPACTION_SAVING_RATIO) {
+    return "insufficient-saving";
   }
+  return null;
+}
+
+export function verifyCompactionYield(
+  totalTokens: number,
+  summaryTokens: number,
+  plan: CompactionWindowPlan,
+): CompactionYieldEstimate {
+  const estimate = estimateCompactionYield(totalTokens, summaryTokens, plan);
+  const reason = yieldGateFailureReason(estimate);
+  if (reason) throw new YieldGateError(reason, estimate);
   return estimate;
 }

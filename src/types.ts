@@ -58,11 +58,14 @@ export interface CompactConfig {
   /**
    * Opt-in escape hatch: when verification still fails after all repair
    * attempts (deterministic repair, LLM patch, deterministic quality floor),
-   * proceed instead of throwing at the post-synthesis / post-state gates.
-   * The best available summary is kept, provenance is marked `forced`, a
-   * warning is shown, and `requireApproval` still gates the actual apply.
-   * The yield check is NOT bypassed. Fail-closed by default.
-   * Can also be enabled with SMART_COMPACT_FORCE_APPLY=1.
+   * proceed instead of throwing at the post-synthesis / post-state gates,
+   * and bypass the compaction-yield gate as well. The best available
+   * summary is kept, provenance is marked `forced` (plus `yieldForced` when
+   * the yield gate was bypassed), a warning is shown, and `requireApproval`
+   * still gates the actual apply. Resolved from the effective config
+   * (caller snapshot or settings.json) on every entry path — manual
+   * command, compact UI, smart_compact tool, and auto-trigger.
+   * Fail-closed by default. Can also be enabled with SMART_COMPACT_FORCE_APPLY=1.
    */
   allowUnverifiedApply: boolean;
   /** File paths that must always survive compaction, regardless of what the
@@ -365,6 +368,8 @@ export interface VerificationProvenance {
   qualityFloorUsed?: boolean;
   /** True when the run was force-applied past a failing verification gate. */
   forced?: boolean;
+  /** True when the compaction-yield gate was bypassed under allowUnverifiedApply. */
+  yieldForced?: boolean;
   finalScore: number;
   remainingGaps: VerificationGap[];
 }

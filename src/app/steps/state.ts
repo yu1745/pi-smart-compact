@@ -26,7 +26,7 @@ import { TRUNC, VERSION } from "../../constants.ts";
 import {
   verifySummary, repairSummaryDeterministically, formatVerificationGap, verificationFailureMessage, VerificationGateError,
 } from "../../phases/verify.ts";
-import { verifyCompactionYield } from "../../domain/yield-gate.ts";
+import { yieldGateFailureReason, estimateCompactionYield, YieldGateError } from "../../domain/yield-gate.ts";
 import { findSection, summaryEvidenceLine } from "../../domain/summary-parse.ts";
 
 export function buildState(rc: VerifiedRc): StatedRc {
@@ -133,13 +133,6 @@ export function buildState(rc: VerifiedRc): StatedRc {
   rc.verified = postVerification.ok;
   rc.verificationScore = postVerification.score;
   rc.verificationGaps = postVerification.gaps.map(formatVerificationGap);
-  rc.verificationProvenance = {
-    ...rc.verificationProvenance,
-    deterministicPatched: [...rc.verificationProvenance.deterministicPatched, ...postRepair.patched],
-    forced: rc.flags.verificationForced === true || undefined,
-    finalScore: postVerification.score,
-    remainingGaps: postVerification.gaps,
-  };
   const failure = verificationFailureMessage(postVerification);
   if (failure) {
     if (rc.flags.forceApply) {
@@ -149,10 +142,23 @@ export function buildState(rc: VerifiedRc): StatedRc {
       throw new VerificationGateError(postVerification, postInitialScore, "post-state");
     }
   }
+  rc.verificationProvenance = {
+    ...rc.verificationProvenance,
+    deterministicPatched: [...rc.verificationProvenance.deterministicPatched, ...postRepair.patched],
+    forced: rc.flags.verificationForced === true || undefined,
+    finalScore: postVerification.score,
+    remainingGaps: postVerification.gaps,
+  };
 
   const detModified = extraction.modifiedFiles.map(f => f.path);
   const detRead = extraction.readFiles;
-  const yieldEstimate = verifyCompactionYield(rc.totalTokens, rc.estimator.text(summary), rc.compactionPlan);
+  const yieldEstimate = estimateCompactionYield(rc.totalTokens, rc.estimator.text(summary), rc.compactionPlan);
+  const yieldFailure = yieldGateFailureReason(yieldEstimate);
+  if (yieldFailure) {
+    if (!rc.flags.forceApply) throw new YieldGateError(yieldFailure, yieldEstimate);
+    rc.verificationProvenance.yieldForced = true;
+    rc.notify("Force apply: yield gate bypassed (" + yieldFailure + ") — estimated yield " + (yieldEstimate.estimatedYield * 100).toFixed(1) + "%", "warning");
+  }
   const tokensSaved = yieldEstimate.estimatedSavedTokens;
 
   const details: SmartCompactDetails = {

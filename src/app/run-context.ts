@@ -75,7 +75,7 @@ export interface RunFlags {
   autoTriggered: boolean;
   skipCompact: boolean;
   force: boolean;
-  /** True when allowUnverifiedApply (config or SMART_COMPACT_FORCE_APPLY=1) is enabled. */
+  /** True when allowUnverifiedApply is enabled via the effective config (caller snapshot or settings.json) or SMART_COMPACT_FORCE_APPLY=1. */
   forceApply: boolean;
   /** Set when a failing verification gate was accepted under forceApply. */
   verificationForced?: boolean;

@@ -7095,6 +7095,7 @@ async function showRestoreAction(ctx, backupPath) {
 // src/app/steps/prepare.ts
 async function prepareRun(rc) {
   const config = rc.config ?? loadConfig();
+  rc.flags.forceApply = rc.flags.forceApply || !!config.allowUnverifiedApply;
   const { profileCfg, estimator, adapted, damageMedian } = preparePreflightProfile({
     cwd: rc.ctx.cwd,
     summaryModel: rc.summaryModel,
@@ -9912,11 +9913,11 @@ class YieldGateError extends Error {
   relaxedSoftBoundaries;
   hardBoundaryAdjusted;
 }
-function verifyCompactionYield(totalTokens, summaryTokens, plan) {
+function estimateCompactionYield(totalTokens, summaryTokens, plan) {
   const estimatedAfterTokens = plan.fixedContextTokens + plan.retainedTokens + summaryTokens;
   const estimatedSavedTokens = Math.max(0, totalTokens - estimatedAfterTokens);
   const estimatedYield = totalTokens > 0 ? estimatedSavedTokens / totalTokens : 0;
-  const estimate = {
+  return {
     plannedAfterTokens: plan.projectedAfterTokens,
     plannedSavedTokens: plan.projectedSavedTokens,
     plannedYield: plan.projectedYield,
@@ -9930,13 +9931,15 @@ function verifyCompactionYield(totalTokens, summaryTokens, plan) {
     relaxedSoftBoundaries: plan.relaxedSoftBoundaries,
     hardBoundaryAdjusted: plan.hardBoundaryAdjusted
   };
-  if (estimatedAfterTokens > plan.targetAfterTokens + ESTIMATOR_ROUNDING_TOLERANCE_TOKENS) {
-    throw new YieldGateError("target-miss", estimate);
+}
+function yieldGateFailureReason(estimate) {
+  if (estimate.estimatedAfterTokens > estimate.targetAfterTokens + ESTIMATOR_ROUNDING_TOLERANCE_TOKENS) {
+    return "target-miss";
   }
-  if (estimatedYield < MIN_COMPACTION_SAVING_RATIO) {
-    throw new YieldGateError("insufficient-saving", estimate);
+  if (estimate.estimatedYield < MIN_COMPACTION_SAVING_RATIO) {
+    return "insufficient-saving";
   }
-  return estimate;
+  return null;
 }
 
 // src/app/steps/state.ts
@@ -10011,13 +10014,6 @@ function buildState(rc) {
   rc.verified = postVerification.ok;
   rc.verificationScore = postVerification.score;
   rc.verificationGaps = postVerification.gaps.map(formatVerificationGap);
-  rc.verificationProvenance = {
-    ...rc.verificationProvenance,
-    deterministicPatched: [...rc.verificationProvenance.deterministicPatched, ...postRepair.patched],
-    forced: rc.flags.verificationForced === true || undefined,
-    finalScore: postVerification.score,
-    remainingGaps: postVerification.gaps
-  };
   const failure = verificationFailureMessage(postVerification);
   if (failure) {
     if (rc.flags.forceApply) {
@@ -10027,9 +10023,23 @@ function buildState(rc) {
       throw new VerificationGateError(postVerification, postInitialScore, "post-state");
     }
   }
+  rc.verificationProvenance = {
+    ...rc.verificationProvenance,
+    deterministicPatched: [...rc.verificationProvenance.deterministicPatched, ...postRepair.patched],
+    forced: rc.flags.verificationForced === true || undefined,
+    finalScore: postVerification.score,
+    remainingGaps: postVerification.gaps
+  };
   const detModified = extraction.modifiedFiles.map((f) => f.path);
   const detRead = extraction.readFiles;
-  const yieldEstimate = verifyCompactionYield(rc.totalTokens, rc.estimator.text(summary), rc.compactionPlan);
+  const yieldEstimate = estimateCompactionYield(rc.totalTokens, rc.estimator.text(summary), rc.compactionPlan);
+  const yieldFailure = yieldGateFailureReason(yieldEstimate);
+  if (yieldFailure) {
+    if (!rc.flags.forceApply)
+      throw new YieldGateError(yieldFailure, yieldEstimate);
+    rc.verificationProvenance.yieldForced = true;
+    rc.notify("Force apply: yield gate bypassed (" + yieldFailure + ") \u2014 estimated yield " + (yieldEstimate.estimatedYield * 100).toFixed(1) + "%", "warning");
+  }
   const tokensSaved = yieldEstimate.estimatedSavedTokens;
   const details = {
     runId: rc.runId,

@@ -19,6 +19,11 @@ import { BudgetGuard } from "../../infra/services.ts";
 
 export async function prepareRun(rc: RcBase): Promise<PreparedRc> {
   const config = rc.config ?? loadConfig();
+  // Verification-gate bypass must reflect the *effective* config, not only the
+  // optional caller snapshot used in makeBase. Entry paths that don't forward
+  // config (manual /smart-compact command, agent_settled auto-trigger) resolve
+  // it here, so allowUnverifiedApply takes effect on every entry path.
+  rc.flags.forceApply = rc.flags.forceApply || !!config.allowUnverifiedApply;
   const { profileCfg, estimator, adapted, damageMedian } = preparePreflightProfile({
     cwd: rc.ctx.cwd,
     summaryModel: rc.summaryModel,
