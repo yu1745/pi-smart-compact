@@ -8,7 +8,7 @@ import { Type as Type2 } from "typebox";
 
 // src/constants.ts
 var VERSION = "9.2.1";
-var FORK_BUILD_TAG = "9.2.1-yu1745.3";
+var FORK_BUILD_TAG = "9.2.1-yu1745.4";
 var CHARS_PER_TOKEN = 3.8;
 var MIN_COMPACTION_SAVING_RATIO = 0.1;
 var ESTIMATOR_ROUNDING_TOLERANCE_TOKENS = 1;
@@ -315,37 +315,128 @@ var EXPLORER_SYSTEM_PROMPT = `You are a conversation analyst. You have determini
 ` + '{"boundaries":[{"afterIndex":N,"topic":"...","priority":"critical|high|normal|low","confidence":0.0-1.0}],"mainGoal":"...","sessionType":"implementation|review|debugging|discussion","enrichedConstraints":[...],"crossReferences":[...],"statusAssessment":{"done":[...],"inProgress":[...],"blocked":[...]},"criticalContext":[...],"keyDecisions":[...]}';
 
 // src/utils/backups.ts
-import fs3 from "fs";
-import path4 from "path";
+import fs4 from "fs";
+import path5 from "path";
 import crypto2 from "crypto";
 
 // src/infra/fs.ts
-import fs from "fs";
+import fs2 from "fs";
 import fsp from "fs/promises";
-import path from "path";
+import path3 from "path";
 import crypto from "crypto";
 
+// src/infra/paths.ts
+import path from "path";
+import os from "os";
+function home() {
+  return process.env.HOME ?? os.homedir();
+}
+function piAgentDir() {
+  return path.join(home(), ".pi", "agent");
+}
+function cacheDir() {
+  return path.join(piAgentDir(), ".cache");
+}
+function smartCompactCacheDir() {
+  return path.join(cacheDir(), "smart-compact");
+}
+function projectFingerprintDir() {
+  return path.join(smartCompactCacheDir(), "projects");
+}
+function compactionStateDir() {
+  return path.join(smartCompactCacheDir(), "states");
+}
+function sessionsDir() {
+  return path.join(piAgentDir(), "sessions");
+}
+function settingsFile() {
+  return path.join(piAgentDir(), "settings.json");
+}
+function defaultBackupDir() {
+  return path.join(piAgentDir(), "compact-backups");
+}
+function metricsLogFile() {
+  return path.join(cacheDir(), "compact-metrics.jsonl");
+}
+function runLocksDir() {
+  return path.join(smartCompactCacheDir(), "run-locks");
+}
+function nativeContinuityDir() {
+  return path.join(smartCompactCacheDir(), "native-continuity");
+}
+function contextGraphFile() {
+  return path.join(smartCompactCacheDir(), "context-graph.sqlite");
+}
+function damageReportsFile() {
+  return path.join(smartCompactCacheDir(), "damage-reports.jsonl");
+}
+function extractionCacheFile(sessionId) {
+  return path.join(cacheDir(), EXTRACTION_CACHE_PREFIX + sessionId.replace(/[^a-zA-Z0-9-]/g, "_") + ".json");
+}
+function projectFingerprintFile(projectId) {
+  return path.join(projectFingerprintDir(), projectId + ".json");
+}
+function compactionStateFile(projectId) {
+  return path.join(compactionStateDir(), projectId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json");
+}
+function legacyScopedCompactionStateFile(projectId, sessionId) {
+  const project = projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const session = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(compactionStateDir(), project, session + ".json");
+}
+function scopedCompactionStateFile(projectId, sessionId, branchHeadId) {
+  const project = projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const session = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const branch = branchHeadId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(compactionStateDir(), project, session, branch + ".json");
+}
+function remediationHintsFile(projectId) {
+  return path.join(smartCompactCacheDir(), "remediation-" + projectId + ".json");
+}
+function metricsDashboardFile() {
+  return path.join(cacheDir(), "smart-compact-report.html");
+}
+
 // src/utils/logger.ts
+import fs from "fs";
+import path2 from "path";
 var DEBUG = process.env.DEBUG?.includes("smart-compact") ?? false;
+function logFile() {
+  const override = process.env.SMART_COMPACT_LOG;
+  if (override)
+    return override;
+  return path2.join(smartCompactCacheDir(), "smart-compact.log");
+}
+function append(level, msg) {
+  try {
+    const line = LOG_PREFIX + " [" + new Date().toISOString() + "] [" + level + "] " + msg + `
+`;
+    const file = logFile();
+    fs.mkdirSync(path2.dirname(file), { recursive: true });
+    fs.appendFileSync(file, line, "utf8");
+  } catch {}
+}
 function warn(msg, err) {
   const detail = err instanceof Error ? err.message : err ?? "";
-  console.error(LOG_PREFIX + " " + msg + (detail ? ": " + detail : ""));
+  append("warn", msg + (detail ? ": " + detail : ""));
 }
 function error(msg, err) {
   const detail = err instanceof Error ? err.message + `
 ` + err.stack : err ?? "";
-  console.error(LOG_PREFIX + " " + msg + (detail ? ": " + detail : ""));
+  append("error", msg + (detail ? ": " + detail : ""));
 }
 function info(msg, ...args) {
-  console.error(LOG_PREFIX + " [info] " + msg, ...args);
+  append("info", args.length ? msg + " " + args.map((a) => String(a)).join(" ") : msg);
 }
 function debug(msg, ...args) {
-  if (DEBUG)
-    console.error(LOG_PREFIX + " [debug] " + msg, ...args);
+  if (!DEBUG)
+    return;
+  append("debug", args.length ? msg + " " + args.map((a) => String(a)).join(" ") : msg);
 }
 function debugError(msg, err) {
-  if (DEBUG)
-    error(msg, err);
+  if (!DEBUG)
+    return;
+  error(msg, err);
 }
 
 // src/infra/fs.ts
@@ -353,8 +444,8 @@ var LOCK_STALE_MS = 5000;
 var LOCK_RETRY_MS = 25;
 var LOCK_MAX_RETRIES = 80;
 function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true, mode: 448 });
-  fs.chmodSync(dir, 448);
+  fs2.mkdirSync(dir, { recursive: true, mode: 448 });
+  fs2.chmodSync(dir, 448);
 }
 async function ensureDirAsync(dir) {
   await fsp.mkdir(dir, { recursive: true, mode: 448 });
@@ -364,21 +455,21 @@ function tempPath(target) {
   return target + ".tmp." + process.pid + "." + crypto.randomBytes(4).toString("hex");
 }
 function atomicWriteFileSync(target, data) {
-  ensureDir(path.dirname(target));
+  ensureDir(path3.dirname(target));
   const tmp = tempPath(target);
   try {
-    fs.writeFileSync(tmp, data, { mode: 384 });
-    fs.renameSync(tmp, target);
-    fs.chmodSync(target, 384);
+    fs2.writeFileSync(tmp, data, { mode: 384 });
+    fs2.renameSync(tmp, target);
+    fs2.chmodSync(target, 384);
   } catch (e) {
     try {
-      fs.unlinkSync(tmp);
+      fs2.unlinkSync(tmp);
     } catch {}
     throw e;
   }
 }
 async function atomicWriteFile(target, data) {
-  await ensureDirAsync(path.dirname(target));
+  await ensureDirAsync(path3.dirname(target));
   const tmp = tempPath(target);
   try {
     await fsp.writeFile(tmp, data, { mode: 384 });
@@ -395,10 +486,10 @@ function tryAcquireLock(target) {
   const lockDir = target + ".lock";
   for (let reclaimAttempt = 0;reclaimAttempt < 2; reclaimAttempt++) {
     try {
-      fs.mkdirSync(lockDir, { mode: 448 });
+      fs2.mkdirSync(lockDir, { mode: 448 });
       return () => {
         try {
-          fs.rmdirSync(lockDir);
+          fs2.rmdirSync(lockDir);
         } catch {}
       };
     } catch (error2) {
@@ -406,17 +497,17 @@ function tryAcquireLock(target) {
         throw new Error("Failed to acquire lock for " + target, { cause: error2 });
       }
       try {
-        const stat = fs.statSync(lockDir);
+        const stat = fs2.statSync(lockDir);
         if (Date.now() - stat.mtimeMs <= LOCK_STALE_MS)
           return null;
         const stolen = lockDir + ".stale." + process.pid + "." + crypto.randomBytes(4).toString("hex");
-        fs.renameSync(lockDir, stolen);
-        const stolenStat = fs.statSync(stolen);
+        fs2.renameSync(lockDir, stolen);
+        const stolenStat = fs2.statSync(stolen);
         if (Date.now() - stolenStat.mtimeMs > LOCK_STALE_MS)
-          fs.rmdirSync(stolen);
+          fs2.rmdirSync(stolen);
         else
           try {
-            fs.renameSync(stolen, lockDir);
+            fs2.renameSync(stolen, lockDir);
           } catch {}
       } catch {}
     }
@@ -450,7 +541,7 @@ async function acquireLock(target) {
   throw new Error("Timed out acquiring lock for " + target);
 }
 function appendLineLocked(target, line, maxBytes) {
-  ensureDir(path.dirname(target));
+  ensureDir(path3.dirname(target));
   const payload = Buffer.from(line.endsWith(`
 `) ? line : line + `
 `);
@@ -462,18 +553,18 @@ function appendLineLocked(target, line, maxBytes) {
   }
   const release = acquireLockBlockingSync(target);
   try {
-    if (maxBytes !== undefined && fs.existsSync(target)) {
-      const stat = fs.statSync(target);
+    if (maxBytes !== undefined && fs2.existsSync(target)) {
+      const stat = fs2.statSync(target);
       if (stat.size + payload.length > maxBytes) {
         const retainedBudget = Math.max(0, maxBytes - payload.length);
         const retainedLength = Math.min(stat.size, retainedBudget);
         const buffer = Buffer.allocUnsafe(retainedLength);
         if (retainedLength > 0) {
-          const fd = fs.openSync(target, "r");
+          const fd = fs2.openSync(target, "r");
           try {
-            fs.readSync(fd, buffer, 0, retainedLength, stat.size - retainedLength);
+            fs2.readSync(fd, buffer, 0, retainedLength, stat.size - retainedLength);
           } finally {
-            fs.closeSync(fd);
+            fs2.closeSync(fd);
           }
         }
         let tail = buffer.toString("utf8");
@@ -485,16 +576,16 @@ function appendLineLocked(target, line, maxBytes) {
         atomicWriteFileSync(target, tail);
       }
     }
-    if (fs.existsSync(target))
-      fs.chmodSync(target, 384);
-    fs.appendFileSync(target, payload, { mode: 384 });
-    fs.chmodSync(target, 384);
+    if (fs2.existsSync(target))
+      fs2.chmodSync(target, 384);
+    fs2.appendFileSync(target, payload, { mode: 384 });
+    fs2.chmodSync(target, 384);
   } finally {
     release();
   }
 }
 async function appendLineLockedAsync(target, line, maxBytes) {
-  await ensureDirAsync(path.dirname(target));
+  await ensureDirAsync(path3.dirname(target));
   const payload = Buffer.from(line.endsWith(`
 `) ? line : line + `
 `);
@@ -539,16 +630,16 @@ async function appendLineLockedAsync(target, line, maxBytes) {
   }
 }
 function readJsonlTail(target, limit, maxBytes = 512 * 1024) {
-  if (limit <= 0 || !fs.existsSync(target))
+  if (limit <= 0 || !fs2.existsSync(target))
     return [];
-  const stat = fs.statSync(target);
+  const stat = fs2.statSync(target);
   const length = Math.min(stat.size, maxBytes);
   const buffer = Buffer.alloc(length);
-  const fd = fs.openSync(target, "r");
+  const fd = fs2.openSync(target, "r");
   try {
-    fs.readSync(fd, buffer, 0, length, stat.size - length);
+    fs2.readSync(fd, buffer, 0, length, stat.size - length);
   } finally {
-    fs.closeSync(fd);
+    fs2.closeSync(fd);
   }
   let text = buffer.toString("utf8");
   if (stat.size > length) {
@@ -569,9 +660,9 @@ function readJsonlTail(target, limit, maxBytes = 512 * 1024) {
 }
 function readJsonSync(target) {
   try {
-    if (!fs.existsSync(target))
+    if (!fs2.existsSync(target))
       return null;
-    const raw = fs.readFileSync(target, "utf8");
+    const raw = fs2.readFileSync(target, "utf8");
     return JSON.parse(raw);
   } catch (e) {
     warn("readJsonSync failed for " + target, e);
@@ -583,82 +674,10 @@ function writeJsonSync(target, value, pretty = false) {
 }
 
 // src/utils/helpers.ts
-import fs2 from "fs";
-
-// src/infra/paths.ts
-import path2 from "path";
-import os from "os";
-function home() {
-  return process.env.HOME ?? os.homedir();
-}
-function piAgentDir() {
-  return path2.join(home(), ".pi", "agent");
-}
-function cacheDir() {
-  return path2.join(piAgentDir(), ".cache");
-}
-function smartCompactCacheDir() {
-  return path2.join(cacheDir(), "smart-compact");
-}
-function projectFingerprintDir() {
-  return path2.join(smartCompactCacheDir(), "projects");
-}
-function compactionStateDir() {
-  return path2.join(smartCompactCacheDir(), "states");
-}
-function sessionsDir() {
-  return path2.join(piAgentDir(), "sessions");
-}
-function settingsFile() {
-  return path2.join(piAgentDir(), "settings.json");
-}
-function defaultBackupDir() {
-  return path2.join(piAgentDir(), "compact-backups");
-}
-function metricsLogFile() {
-  return path2.join(cacheDir(), "compact-metrics.jsonl");
-}
-function runLocksDir() {
-  return path2.join(smartCompactCacheDir(), "run-locks");
-}
-function nativeContinuityDir() {
-  return path2.join(smartCompactCacheDir(), "native-continuity");
-}
-function contextGraphFile() {
-  return path2.join(smartCompactCacheDir(), "context-graph.sqlite");
-}
-function damageReportsFile() {
-  return path2.join(smartCompactCacheDir(), "damage-reports.jsonl");
-}
-function extractionCacheFile(sessionId) {
-  return path2.join(cacheDir(), EXTRACTION_CACHE_PREFIX + sessionId.replace(/[^a-zA-Z0-9-]/g, "_") + ".json");
-}
-function projectFingerprintFile(projectId) {
-  return path2.join(projectFingerprintDir(), projectId + ".json");
-}
-function compactionStateFile(projectId) {
-  return path2.join(compactionStateDir(), projectId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json");
-}
-function legacyScopedCompactionStateFile(projectId, sessionId) {
-  const project = projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const session = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return path2.join(compactionStateDir(), project, session + ".json");
-}
-function scopedCompactionStateFile(projectId, sessionId, branchHeadId) {
-  const project = projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const session = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const branch = branchHeadId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return path2.join(compactionStateDir(), project, session, branch + ".json");
-}
-function remediationHintsFile(projectId) {
-  return path2.join(smartCompactCacheDir(), "remediation-" + projectId + ".json");
-}
-function metricsDashboardFile() {
-  return path2.join(cacheDir(), "smart-compact-report.html");
-}
+import fs3 from "fs";
 
 // src/utils/extraction.ts
-import path3 from "path";
+import path4 from "path";
 
 // src/utils/lru.ts
 function lruGet(m, key) {
@@ -1135,8 +1154,8 @@ function buildUniquePathNeedles(filePath, allPaths) {
 }
 function isKnownPathReference(ref, knownPaths) {
   const normalizedRef = normalizePath(ref);
-  return knownPaths.some((path3) => {
-    const normalizedPath = normalizePath(path3);
+  return knownPaths.some((path4) => {
+    const normalizedPath = normalizePath(path4);
     return normalizedPath === normalizedRef || normalizedPath.endsWith("/" + normalizedRef);
   });
 }
@@ -1217,10 +1236,10 @@ function tokenizeShell(command) {
     if (char === ">" || char === ";" || char === "|" || char === "&" && command[index + 1] === "&") {
       flush();
       if (char === ">") {
-        const append = command[index + 1] === ">";
-        if (append)
+        const append2 = command[index + 1] === ">";
+        if (append2)
           index++;
-        tokens.push({ kind: "redirect", value: append ? ">>" : ">" });
+        tokens.push({ kind: "redirect", value: append2 ? ">>" : ">" });
       } else {
         const paired = char === "|" && command[index + 1] === "|" || char === "&" && command[index + 1] === "&";
         if (paired)
@@ -1946,7 +1965,7 @@ function segmentTopicsHeuristic(msgs, pc, maxSegs = 20, _tcIdx) {
     const messageTokens = estimateTokens(text);
     const tools = message.role === "assistant" ? (Array.isArray(message.content) ? message.content : []).flatMap(flattenToolCallBlock) : [];
     const nextFile = tools.map((tool) => extractToolPath(tool.arguments)).find((value) => Boolean(value));
-    const nextBasename = nextFile ? path3.basename(nextFile) : null;
+    const nextBasename = nextFile ? path4.basename(nextFile) : null;
     const closesActiveTool = message.role === "toolResult" && (tcIdx.get(message.toolCallId ?? "")?.msgIndex ?? -1) >= startIdx;
     const fileShift = Boolean(lastFile && nextBasename && nextBasename !== lastFile);
     const userShift = message.role === "user" && SHIFT_RE.test(text);
@@ -1971,7 +1990,7 @@ function segmentTopicsHeuristic(msgs, pc, maxSegs = 20, _tcIdx) {
     for (const tool of tools) {
       const filePath = extractToolPath(tool.arguments);
       if (filePath) {
-        lastFile = path3.basename(filePath);
+        lastFile = path4.basename(filePath);
         currentPrimaryFile = filePath;
       }
       const operation = classifyToolOperation(tool.arguments, tool.name);
@@ -2072,7 +2091,7 @@ function extractOpenLoops(msgs, extraction) {
   }));
   for (const err of extraction.errors.filter((e) => !e.resolved)) {
     const errLower = err.message.toLowerCase();
-    const errFiles = fileNeedles.filter(({ needles }) => needles.some((n) => errLower.includes(n))).map(({ path: path4 }) => path4);
+    const errFiles = fileNeedles.filter(({ needles }) => needles.some((n) => errLower.includes(n))).map(({ path: path5 }) => path5);
     loops.push({
       id: ID_PREFIX.OPEN_LOOP + ++loopId,
       type: "bugfix",
@@ -2386,10 +2405,10 @@ var _cfgPath = null;
 function loadConfig() {
   try {
     const p = settingsFile();
-    const stat = fs2.statSync(p);
+    const stat = fs3.statSync(p);
     if (_cfg && _cfgPath === p && stat.mtimeMs === _cfgMtime)
       return _cfg;
-    const raw = JSON.parse(fs2.readFileSync(p, "utf-8"));
+    const raw = JSON.parse(fs3.readFileSync(p, "utf-8"));
     const sc = raw[CONFIG_KEY] ?? raw[CONFIG_KEY_ALT] ?? {};
     validateSmartCompactConfig(sc);
     const merged = { ...DEFAULT_CONFIG, ...sc };
@@ -2762,26 +2781,26 @@ var pruneInFlight = new Set;
 function isOwnedBackupFile(full) {
   let fd;
   try {
-    if (!fs3.lstatSync(full).isFile())
+    if (!fs4.lstatSync(full).isFile())
       return false;
     const prefix = Buffer.alloc(Buffer.byteLength(BACKUP_MAGIC));
-    fd = fs3.openSync(full, "r");
-    return fs3.readSync(fd, prefix, 0, prefix.length, 0) === prefix.length && prefix.toString("utf8") === BACKUP_MAGIC;
+    fd = fs4.openSync(full, "r");
+    return fs4.readSync(fd, prefix, 0, prefix.length, 0) === prefix.length && prefix.toString("utf8") === BACKUP_MAGIC;
   } catch {
     return false;
   } finally {
     if (fd !== undefined)
       try {
-        fs3.closeSync(fd);
+        fs4.closeSync(fd);
       } catch {}
   }
 }
 function readOwnedBackupHeader(full) {
   let fd;
   try {
-    fd = fs3.openSync(full, "r");
+    fd = fs4.openSync(full, "r");
     const buffer = Buffer.allocUnsafe(BACKUP_HEADER_MAX_BYTES);
-    const bytesRead = fs3.readSync(fd, buffer, 0, buffer.length, 0);
+    const bytesRead = fs4.readSync(fd, buffer, 0, buffer.length, 0);
     const header = buffer.subarray(0, bytesRead).toString("utf8");
     return header.startsWith(BACKUP_MAGIC) ? header : null;
   } catch {
@@ -2789,26 +2808,26 @@ function readOwnedBackupHeader(full) {
   } finally {
     if (fd !== undefined)
       try {
-        fs3.closeSync(fd);
+        fs4.closeSync(fd);
       } catch {}
   }
 }
 function prunePass(dir) {
   try {
-    const names = fs3.readdirSync(dir);
+    const names = fs4.readdirSync(dir);
     for (const name of names) {
       if (!/\.tmp\.\d+\.[0-9a-f]+$/i.test(name))
         continue;
-      const full = path4.join(dir, name);
+      const full = path5.join(dir, name);
       try {
-        if (Date.now() - fs3.statSync(full).mtimeMs > ONE_HOUR_MS)
-          fs3.unlinkSync(full);
+        if (Date.now() - fs4.statSync(full).mtimeMs > ONE_HOUR_MS)
+          fs4.unlinkSync(full);
       } catch {}
     }
     const entries = names.filter((name) => name.endsWith(".md")).map((name) => {
-      const full = path4.join(dir, name);
+      const full = path5.join(dir, name);
       try {
-        return isOwnedBackupFile(full) ? { full, mtimeMs: fs3.statSync(full).mtimeMs } : null;
+        return isOwnedBackupFile(full) ? { full, mtimeMs: fs4.statSync(full).mtimeMs } : null;
       } catch {
         return null;
       }
@@ -2820,7 +2839,7 @@ function prunePass(dir) {
     for (const full of toRemove) {
       try {
         if (isOwnedBackupFile(full))
-          fs3.unlinkSync(full);
+          fs4.unlinkSync(full);
       } catch (error2) {
         debug("prunePass unlink failed", error2);
       }
@@ -2853,7 +2872,7 @@ function prepareConversationBackup(source, sessionId, metadata = {}) {
     const safeSessionId = sessionId.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.{2,}/g, "_").slice(0, 80) || "session";
     const headerSessionId = sessionId.replace(/[\r\n]/g, " ").slice(0, 256);
     return {
-      path: path4.join(config.backupDir, safeSessionId + "-" + timestamp + "-" + hash + ".md"),
+      path: path5.join(config.backupDir, safeSessionId + "-" + timestamp + "-" + hash + ".md"),
       ...typeof source === "string" ? { content: source } : { materialize: source },
       sessionId: headerSessionId,
       createdAt: createdAt.toISOString(),
@@ -2877,7 +2896,7 @@ async function commitPreparedConversationBackup(prepared) {
 ` : "") + `
 `;
     await atomicWriteFile(prepared.path, metadata + body);
-    schedulePruneBackups(path4.dirname(prepared.path));
+    schedulePruneBackups(path5.dirname(prepared.path));
     return prepared.path;
   } catch (error2) {
     warn("commitPreparedConversationBackup failed", error2);
@@ -2887,15 +2906,15 @@ async function commitPreparedConversationBackup(prepared) {
 function listBackups(limit = 20) {
   try {
     const dir = loadConfig().backupDir;
-    if (!fs3.existsSync(dir))
+    if (!fs4.existsSync(dir))
       return [];
     const out = [];
-    for (const name of fs3.readdirSync(dir)) {
+    for (const name of fs4.readdirSync(dir)) {
       if (!name.endsWith(".md"))
         continue;
-      const full = path4.join(dir, name);
+      const full = path5.join(dir, name);
       try {
-        const stat = fs3.statSync(full);
+        const stat = fs4.statSync(full);
         if (!stat.isFile())
           continue;
         const header = readOwnedBackupHeader(full);
@@ -2922,7 +2941,7 @@ function readConversationBackup(file) {
   try {
     if (!isOwnedBackupFile(file))
       return null;
-    const raw = fs3.readFileSync(file, "utf8");
+    const raw = fs4.readFileSync(file, "utf8");
     const lines = raw.split(`
 `);
     let index = 0;
@@ -2960,8 +2979,8 @@ Source: ` + source + `
 }
 
 // src/utils/cache.ts
-import fs4 from "fs";
-import path5 from "path";
+import fs5 from "fs";
+import path6 from "path";
 
 // src/utils/id-fingerprint.ts
 import crypto3 from "crypto";
@@ -3726,19 +3745,19 @@ function scheduleExtractionCacheCleanup() {
   _extractionPruneInFlight = true;
   setTimeout(() => {
     try {
-      const dir = path5.dirname(getCachePath("_"));
-      if (!fs4.existsSync(dir))
+      const dir = path6.dirname(getCachePath("_"));
+      if (!fs5.existsSync(dir))
         return;
       const now = Date.now();
-      for (const name of fs4.readdirSync(dir)) {
+      for (const name of fs5.readdirSync(dir)) {
         if (!name.startsWith(EXTRACTION_CACHE_PREFIX) || !name.endsWith(".json"))
           continue;
-        const fp = path5.join(dir, name);
+        const fp = path6.join(dir, name);
         try {
-          const stat = fs4.statSync(fp);
+          const stat = fs5.statSync(fp);
           if (now - stat.mtimeMs > EXTRACTION_CACHE_PRUNE_MAX_AGE_MS) {
             try {
-              fs4.unlinkSync(fp);
+              fs5.unlinkSync(fp);
             } catch (e) {
               debug("extraction-cache prune unlink failed", e);
             }
@@ -3913,16 +3932,16 @@ async function appendMetricsLog(sessionId, extra, services) {
 function readMetricsLog(limit = 100) {
   try {
     const logPath = metricsLogFile();
-    if (!fs4.existsSync(logPath))
+    if (!fs5.existsSync(logPath))
       return [];
-    const stat = fs4.statSync(logPath);
+    const stat = fs5.statSync(logPath);
     const TAIL_CHUNK = 64 * 1024;
     const wantBytes = Math.min(stat.size, Math.max(TAIL_CHUNK, limit * 8 * 512));
     const startPos = Math.max(0, stat.size - wantBytes);
-    const fd = fs4.openSync(logPath, "r");
+    const fd = fs5.openSync(logPath, "r");
     try {
       const buf = Buffer.alloc(wantBytes);
-      const bytesRead = fs4.readSync(fd, buf, 0, wantBytes, startPos);
+      const bytesRead = fs5.readSync(fd, buf, 0, wantBytes, startPos);
       let text = buf.subarray(0, bytesRead).toString("utf8");
       if (startPos > 0) {
         const nl = text.indexOf(`
@@ -3942,7 +3961,7 @@ function readMetricsLog(limit = 100) {
       }
       return entries.slice(-limit);
     } finally {
-      fs4.closeSync(fd);
+      fs5.closeSync(fd);
     }
   } catch (e) {
     warn("readMetricsLog failed", e);
@@ -4777,8 +4796,8 @@ import { randomUUID as randomUUID3 } from "crypto";
 
 // src/app/session-run-lock.ts
 import { createHash, randomUUID } from "crypto";
-import fs5 from "fs";
-import path6 from "path";
+import fs6 from "fs";
+import path7 from "path";
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0)
     return false;
@@ -4791,27 +4810,27 @@ function processAlive(pid) {
 }
 function readLease(file) {
   try {
-    return JSON.parse(fs5.readFileSync(file, "utf8"));
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch {
     return null;
   }
 }
 function acquireFileLease(file, staleMs) {
-  fs5.mkdirSync(path6.dirname(file), { recursive: true });
+  fs6.mkdirSync(path7.dirname(file), { recursive: true });
   const token = randomUUID();
   const create = () => {
     try {
-      const fd = fs5.openSync(file, "wx", 384);
+      const fd = fs6.openSync(file, "wx", 384);
       try {
-        fs5.writeFileSync(fd, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token }) + `
+        fs6.writeFileSync(fd, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token }) + `
 `);
       } catch (error2) {
         try {
-          fs5.unlinkSync(file);
+          fs6.unlinkSync(file);
         } catch {}
         throw error2;
       } finally {
-        fs5.closeSync(fd);
+        fs6.closeSync(fd);
       }
       const lease = { file, token };
       lease.heartbeat = setInterval(() => {
@@ -4822,7 +4841,7 @@ function acquireFileLease(file, staleMs) {
           return;
         }
         try {
-          fs5.utimesSync(file, new Date, new Date);
+          fs6.utimesSync(file, new Date, new Date);
         } catch {}
       }, Math.max(1e4, Math.floor(staleMs / 3)));
       lease.heartbeat.unref();
@@ -4839,7 +4858,7 @@ function acquireFileLease(file, staleMs) {
   const current = readLease(file);
   let observedStat;
   try {
-    observedStat = fs5.statSync(file);
+    observedStat = fs6.statSync(file);
   } catch {
     return null;
   }
@@ -4851,7 +4870,7 @@ function acquireFileLease(file, staleMs) {
   const latest = readLease(file);
   let latestStat;
   try {
-    latestStat = fs5.statSync(file);
+    latestStat = fs6.statSync(file);
   } catch {
     return null;
   }
@@ -4862,7 +4881,7 @@ function acquireFileLease(file, staleMs) {
   if (current?.token ? latest?.token !== current.token : latestStat.dev !== observedStat.dev || latestStat.ino !== observedStat.ino || latestStat.size !== observedStat.size || latestStat.mtimeMs !== observedStat.mtimeMs)
     return null;
   try {
-    fs5.unlinkSync(file);
+    fs6.unlinkSync(file);
   } catch {
     return null;
   }
@@ -4877,7 +4896,7 @@ function releaseFileLease(lease) {
   if (current?.token !== lease.token)
     return;
   try {
-    fs5.unlinkSync(lease.file);
+    fs6.unlinkSync(lease.file);
   } catch {}
 }
 function createSessionRunLock(maxConcurrent = 2, options = {}) {
@@ -4903,12 +4922,12 @@ function createSessionRunLock(maxConcurrent = 2, options = {}) {
       }
       try {
         const sessionHash = createHash("sha256").update(sessionId).digest("hex").slice(0, 24);
-        const session = acquireFileLease(path6.join(leaseDir, "session-" + sessionHash + ".lock"), staleMs);
+        const session = acquireFileLease(path7.join(leaseDir, "session-" + sessionHash + ".lock"), staleMs);
         if (!session)
           return false;
         let slot = null;
         for (let index = 0;index < capacity && !slot; index++) {
-          slot = acquireFileLease(path6.join(leaseDir, "slot-" + index + ".lock"), staleMs);
+          slot = acquireFileLease(path7.join(leaseDir, "slot-" + index + ".lock"), staleMs);
         }
         if (!slot) {
           releaseFileLease(session);
@@ -5089,12 +5108,12 @@ import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { Container, Key, matchesKey, ScrollView, SelectList, Text, truncateToWidth, visibleWidth, VStack } from "@earendil-works/pi-tui";
 
 // src/utils/fingerprint.ts
-import path8 from "path";
+import path9 from "path";
 import crypto5 from "crypto";
 
 // src/infra/git.ts
 import { execSync } from "child_process";
-import path7 from "path";
+import path8 from "path";
 var POSITIVE_TTL_MS = 5 * 60000;
 var NEGATIVE_TTL_MS = 5000;
 var ROOT_CACHE_MAX = 128;
@@ -5102,7 +5121,7 @@ var ROOT_CACHE = new Map;
 function findGitRoot(cwd, now = Date.now()) {
   if (!cwd)
     return null;
-  const key = path7.resolve(cwd);
+  const key = path8.resolve(cwd);
   const cached = ROOT_CACHE.get(key);
   if (cached && cached.expiresAt > now) {
     ROOT_CACHE.delete(key);
@@ -5227,9 +5246,9 @@ function deriveFromRelativePaths(paths) {
 function deriveProjectIdFromCwd(cwd) {
   if (!cwd)
     return null;
-  const resolved = path8.resolve(cwd);
-  const home2 = process.env.HOME ? path8.resolve(process.env.HOME) : null;
-  if (resolved === path8.parse(resolved).root || resolved === home2)
+  const resolved = path9.resolve(cwd);
+  const home2 = process.env.HOME ? path9.resolve(process.env.HOME) : null;
+  if (resolved === path9.parse(resolved).root || resolved === home2)
     return null;
   return hashProjectId(findGitRoot2(resolved) ?? resolved);
 }
@@ -5260,13 +5279,13 @@ function deriveProjectId(cwd, extraction, sessionId) {
 function detectLanguage(extraction) {
   const extCounts = new Map;
   for (const f of extraction.modifiedFiles) {
-    const ext = path8.extname(f.path).toLowerCase();
+    const ext = path9.extname(f.path).toLowerCase();
     if (ext && LANG_MAP[ext]) {
       extCounts.set(LANG_MAP[ext], (extCounts.get(LANG_MAP[ext]) ?? 0) + 1);
     }
   }
   for (const f of extraction.readFiles) {
-    const ext = path8.extname(f).toLowerCase();
+    const ext = path9.extname(f).toLowerCase();
     if (ext && LANG_MAP[ext]) {
       extCounts.set(LANG_MAP[ext], (extCounts.get(LANG_MAP[ext]) ?? 0) + 1);
     }
@@ -5305,7 +5324,7 @@ function loadProjectFingerprint(projectId) {
 async function saveProjectFingerprint(projectId, sessionId, extraction) {
   try {
     const fingerprintPath = getFingerprintPath(projectId);
-    ensureDir(path8.dirname(fingerprintPath));
+    ensureDir(path9.dirname(fingerprintPath));
     const release = await acquireLock(fingerprintPath);
     try {
       const existing = loadProjectFingerprint(projectId);
@@ -5915,11 +5934,11 @@ function planManualPreflight(ctx, summaryModel, mode, tokenCalibration, config, 
 }
 
 // src/ui/overlays.ts
-import path10 from "path";
+import path11 from "path";
 
 // src/utils/state.ts
-import fs6 from "fs";
-import path9 from "path";
+import fs7 from "fs";
+import path10 from "path";
 function getStatePath(projectId, state) {
   if (!state?.scope)
     return compactionStateFile(projectId);
@@ -5949,7 +5968,7 @@ function freshState(fp, data) {
   let updatedAt = data.updatedAt;
   if (!updatedAt) {
     try {
-      updatedAt = fs6.statSync(fp).mtimeMs;
+      updatedAt = fs7.statSync(fp).mtimeMs;
     } catch (e) {
       debug("statSync failed for state file", e);
       updatedAt = 0;
@@ -5957,7 +5976,7 @@ function freshState(fp, data) {
   }
   if (Date.now() - updatedAt > SEVEN_DAYS_MS) {
     try {
-      fs6.unlinkSync(fp);
+      fs7.unlinkSync(fp);
     } catch (error2) {
       debug("stale state cleanup failed", error2);
     }
@@ -5967,14 +5986,14 @@ function freshState(fp, data) {
 }
 function pruneScopedStateSnapshots(target) {
   try {
-    const dir = path9.dirname(target);
-    const snapshots = fs6.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
-      const file = path9.join(dir, entry.name);
-      return { file, mtimeMs: fs6.statSync(file).mtimeMs };
+    const dir = path10.dirname(target);
+    const snapshots = fs7.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
+      const file = path10.join(dir, entry.name);
+      return { file, mtimeMs: fs7.statSync(file).mtimeMs };
     }).filter((entry) => entry.file !== target).sort((a, b) => b.mtimeMs - a.mtimeMs || b.file.localeCompare(a.file));
     for (const snapshot of snapshots.slice(Math.max(0, STATE_SNAPSHOT_MAX_FILES - 1))) {
       try {
-        fs6.unlinkSync(snapshot.file);
+        fs7.unlinkSync(snapshot.file);
       } catch (error2) {
         debug("state snapshot cleanup failed", error2);
       }
@@ -5999,7 +6018,7 @@ function loadScopedCompactionState(scope, branchEntryIds2 = []) {
   const snapshotProbe = scopedCompactionStateFile(scope.projectId, scope.sessionId, "__snapshot__");
   let availableSnapshots = new Set;
   try {
-    availableSnapshots = new Set(fs6.readdirSync(path9.dirname(snapshotProbe), { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name));
+    availableSnapshots = new Set(fs7.readdirSync(path10.dirname(snapshotProbe), { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name));
   } catch {}
   const ancestry = Array.from(new Set([
     ...branchEntryIds2,
@@ -6008,7 +6027,7 @@ function loadScopedCompactionState(scope, branchEntryIds2 = []) {
   const valid = (state, branchHeadId) => Boolean(state?.scope?.schemaVersion === 2 && state.scope.projectId === scope.projectId && state.scope.sessionId === scope.sessionId && typeof state.scope.branchHeadId === "string" && (!branchHeadId || state.scope.branchHeadId === branchHeadId));
   for (const branchHeadId of ancestry) {
     const fp = scopedCompactionStateFile(scope.projectId, scope.sessionId, branchHeadId);
-    if (!availableSnapshots.has(path9.basename(fp)))
+    if (!availableSnapshots.has(path10.basename(fp)))
       continue;
     const state = freshState(fp, readJsonSync(fp));
     if (valid(state, branchHeadId))
@@ -6019,7 +6038,7 @@ function loadScopedCompactionState(scope, branchEntryIds2 = []) {
   if (!valid(legacy) || !ancestry.includes(legacy.scope.branchHeadId))
     return null;
   try {
-    fs6.unlinkSync(legacyPath);
+    fs7.unlinkSync(legacyPath);
     writeJsonSync(getStatePath(scope.projectId, legacy), legacy, true);
   } catch (error2) {
     warn("branch state migration failed", error2);
@@ -6313,7 +6332,7 @@ function ensurePinnedPaths(summary, pinned) {
   if (!pinned.length)
     return summary;
   const lower = summary.toLowerCase();
-  const missing = pinned.map((path10) => summaryEvidenceLine(path10, TRUNC.MESSAGE)).filter((path10) => path10 && !lower.includes(path10.toLowerCase()));
+  const missing = pinned.map((path11) => summaryEvidenceLine(path11, TRUNC.MESSAGE)).filter((path11) => path11 && !lower.includes(path11.toLowerCase()));
   if (!missing.length)
     return summary;
   const parsed = parseSummary(summary);
@@ -6612,7 +6631,7 @@ async function showResultScreen(ctx, details, extraction, services, opts = {}) {
         const f = modFiles[i];
         const fc = extraction.modifiedFiles.find((e) => e.path === f);
         const count = fc ? " (" + fc.toolCalls + "x)" : "";
-        c.addChild(new Text(theme.fg("success", "    \u270E ") + theme.fg("text", path10.basename(f)) + theme.fg("dim", count + " \u2192 " + f), 0, 0));
+        c.addChild(new Text(theme.fg("success", "    \u270E ") + theme.fg("text", path11.basename(f)) + theme.fg("dim", count + " \u2192 " + f), 0, 0));
       }
       if (modFiles.length > maxShow) {
         c.addChild(new Text(theme.fg("dim", "    + " + (modFiles.length - maxShow) + " more"), 0, 0));
@@ -7156,8 +7175,8 @@ function scrubLlmMessages(msgs, scrubber) {
 }
 
 // src/utils/session-log.ts
-import * as fs7 from "fs";
-import * as path11 from "path";
+import * as fs8 from "fs";
+import * as path12 from "path";
 import os2 from "os";
 import { StringDecoder } from "string_decoder";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
@@ -7165,7 +7184,7 @@ function getSessionsDir() {
   return sessionsDir();
 }
 async function* streamJsonlLines(file, chunkSize = 64 * 1024) {
-  const handle = await fs7.promises.open(file, "r");
+  const handle = await fs8.promises.open(file, "r");
   try {
     const buffer = Buffer.allocUnsafe(chunkSize);
     const decoder = new StringDecoder("utf8");
@@ -7202,19 +7221,19 @@ function getMaxEntries() {
 var logPathCache = new Map;
 var messageMapCache = new Map;
 function sessionDirectoryForCwd(cwd) {
-  const safeCwd = path11.resolve(cwd).replace(/^[/\\]/, "").replace(/[:/\\]/g, "-");
-  return path11.join(getSessionsDir(), "--" + safeCwd + "--");
+  const safeCwd = path12.resolve(cwd).replace(/^[/\\]/, "").replace(/[:/\\]/g, "-");
+  return path12.join(getSessionsDir(), "--" + safeCwd + "--");
 }
 function findLogInDirectory(directory, sessionId) {
-  if (!fs7.existsSync(directory))
+  if (!fs8.existsSync(directory))
     return null;
   if (/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
-    const exact = path11.join(directory, sessionId + ".jsonl");
-    if (fs7.existsSync(exact))
+    const exact = path12.join(directory, sessionId + ".jsonl");
+    if (fs8.existsSync(exact))
       return exact;
   }
-  const match = fs7.readdirSync(directory, { withFileTypes: true }).find((entry) => entry.isFile() && entry.name.endsWith("_" + sessionId + ".jsonl"));
-  return match ? path11.join(directory, match.name) : null;
+  const match = fs8.readdirSync(directory, { withFileTypes: true }).find((entry) => entry.isFile() && entry.name.endsWith("_" + sessionId + ".jsonl"));
+  return match ? path12.join(directory, match.name) : null;
 }
 function findSessionLogFile(sessionId, cwd) {
   const home2 = process.env.HOME ?? os2.homedir();
@@ -7230,17 +7249,17 @@ function findSessionLogFile(sessionId, cwd) {
     if (cached && cached.home === home2 && cached.expiresAt > now)
       return cached.path;
     const sessionsDir2 = getSessionsDir();
-    if (!fs7.existsSync(sessionsDir2))
+    if (!fs8.existsSync(sessionsDir2))
       return remember(null);
     if (directDirectory) {
       const direct = findLogInDirectory(directDirectory, sessionId);
       if (direct)
         return remember(direct);
     }
-    for (const subdir of fs7.readdirSync(sessionsDir2, { withFileTypes: true })) {
+    for (const subdir of fs8.readdirSync(sessionsDir2, { withFileTypes: true })) {
       if (!subdir.isDirectory())
         continue;
-      const subdirPath = path11.join(sessionsDir2, subdir.name);
+      const subdirPath = path12.join(sessionsDir2, subdir.name);
       if (subdirPath === directDirectory)
         continue;
       const found = findLogInDirectory(subdirPath, sessionId);
@@ -7279,7 +7298,7 @@ async function readOriginalMessageMap(sessionId, wantedIds, cwd) {
     return null;
   }
   try {
-    const stat = await fs7.promises.stat(logPath);
+    const stat = await fs8.promises.stat(logPath);
     const cached = lruGet(messageMapCache, sessionId);
     if (cached && cached.logPath === logPath && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size && Array.from(wantedIds).every((id) => cached.requestedIds.has(id))) {
       return cached.map;
@@ -9870,9 +9889,8 @@ async function verifyAndPatch(rc) {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + verification.gaps.length + " unresolved verification gap(s) accepted at " + verification.score + "/100", "warning");
     } else {
-      const gateError = new VerificationGateError(verification, initialScore, "post-synthesis");
-      gateError.detail = gateDiagnostics(rc);
-      throw gateError;
+      error("gate refused (post-synthesis): " + gateDiagnostics(rc));
+      throw new VerificationGateError(verification, initialScore, "post-synthesis");
     }
   }
   showProgressOverlay(rc.ctx, {
@@ -9899,8 +9917,8 @@ async function verifyAndPatch(rc) {
 }
 
 // src/app/steps/state.ts
-import fs8 from "fs";
-import path12 from "path";
+import fs9 from "fs";
+import path13 from "path";
 
 // src/domain/yield-gate.ts
 class YieldGateError extends Error {
@@ -9989,8 +10007,8 @@ function buildState(rc) {
   currentState.factOverrides = prevState?.factOverrides ?? [];
   let compactionState = mergeCompactionStates(prevState, currentState);
   compactionState.deletedFiles = compactionState.deletedFiles.filter((file) => {
-    const candidate = path12.isAbsolute(file) ? file : path12.resolve(rc.ctx.cwd, file);
-    return !fs8.existsSync(candidate);
+    const candidate = path13.isAbsolute(file) ? file : path13.resolve(rc.ctx.cwd, file);
+    return !fs9.existsSync(candidate);
   });
   if (preserve.length > 0) {
     compactionState.readFiles = Array.from(new Set([...preserve, ...compactionState.readFiles])).slice(0, 100);
@@ -10031,9 +10049,8 @@ function buildState(rc) {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + postVerification.gaps.length + " unresolved post-state verification gap(s) accepted at " + postVerification.score + "/100", "warning");
     } else {
-      const gateError = new VerificationGateError(postVerification, postInitialScore, "post-state");
-      gateError.detail = gateDiagnostics(rc);
-      throw gateError;
+      error("gate refused (post-state): " + gateDiagnostics(rc));
+      throw new VerificationGateError(postVerification, postInitialScore, "post-state");
     }
   }
   rc.verificationProvenance = {
@@ -10100,8 +10117,8 @@ function buildState(rc) {
 
 // src/infra/context-graph.ts
 import { createHash as createHash3 } from "crypto";
-import fs9 from "fs";
-import path13 from "path";
+import fs10 from "fs";
+import path14 from "path";
 import { createRequire } from "module";
 var require2 = createRequire(import.meta.url);
 var MAX_PROJECT_NODES = 2000;
@@ -10152,7 +10169,7 @@ function nodeSqliteAdapter(db) {
 }
 function openDatabase() {
   const fp = contextGraphFile();
-  ensureDir(path13.dirname(fp));
+  ensureDir(path14.dirname(fp));
   let db;
   if ("bun" in process.versions) {
     const { Database } = require2("bun:sqlite");
@@ -10162,7 +10179,7 @@ function openDatabase() {
     db = nodeSqliteAdapter(new DatabaseSync(fp));
   }
   try {
-    fs9.chmodSync(fp, 384);
+    fs10.chmodSync(fp, 384);
   } catch {}
   db.exec("PRAGMA busy_timeout=1000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
   db.exec(`
@@ -11022,7 +11039,7 @@ function compactText(error2) {
 function formatCompactErrorForUi(error2) {
   if (error2 instanceof VerificationGateError) {
     const kinds = error2.gapKinds.slice(0, 4).join(", ") || "unknown";
-    return "Verification stopped apply at the " + error2.stage + " gate: " + error2.score + "/100, " + error2.gapCount + (error2.gapCount === 1 ? " unresolved gap [" : " unresolved gaps [") + kinds + "]. " + (error2.detail ? "Diagnostics: " + error2.detail + ". " : "") + DEBUG_HINT;
+    return "Verification stopped apply at the " + error2.stage + " gate: " + error2.score + "/100, " + error2.gapCount + (error2.gapCount === 1 ? " unresolved gap [" : " unresolved gaps [") + kinds + "]. " + DEBUG_HINT;
   }
   if (error2 instanceof YieldGateError) {
     const reason = error2.reason === "target-miss" ? "target missed" : "saving below 10%";
@@ -11686,8 +11703,8 @@ function createCompactionCommitStore(options = {}) {
 
 // src/app/native-continuity-bridge.ts
 import crypto6 from "crypto";
-import fs10 from "fs";
-import path14 from "path";
+import fs11 from "fs";
+import path15 from "path";
 var MAX_TEXT_BYTES = 256 * 1024;
 function sameScope(a, b) {
   return a.projectId === b.projectId && a.sessionId === b.sessionId && a.branchHeadId === b.branchHeadId;
@@ -11709,14 +11726,14 @@ function createNativeContinuityBridge(opts = {}) {
   const maxEntries = Math.max(1, opts.maxEntries ?? 64);
   const now = opts.now ?? Date.now;
   const dir = opts.dir ?? nativeContinuityDir();
-  const lockTarget = path14.join(dir, "bridge");
-  const fileFor = (scope) => path14.join(dir, crypto6.createHash("sha256").update(scope.projectId + "\x00" + scope.sessionId + "\x00" + scope.branchHeadId).digest("hex") + ".json");
+  const lockTarget = path15.join(dir, "bridge");
+  const fileFor = (scope) => path15.join(dir, crypto6.createHash("sha256").update(scope.projectId + "\x00" + scope.sessionId + "\x00" + scope.branchHeadId).digest("hex") + ".json");
   const validScope = (scope) => Boolean(scope.projectId && scope.sessionId && scope.branchHeadId);
   const readEntry = (file) => {
     try {
-      if (fs10.statSync(file).size > MAX_TEXT_BYTES * 2)
+      if (fs11.statSync(file).size > MAX_TEXT_BYTES * 2)
         return null;
-      const value = JSON.parse(fs10.readFileSync(file, "utf8"));
+      const value = JSON.parse(fs11.readFileSync(file, "utf8"));
       if (value.schemaVersion !== 1 || typeof value.text !== "string" || Buffer.byteLength(value.text) > MAX_TEXT_BYTES || typeof value.createdAt !== "number" || !Number.isFinite(value.createdAt) || !value.scope || !validScope(value.scope))
         return null;
       return value;
@@ -11728,26 +11745,26 @@ function createNativeContinuityBridge(opts = {}) {
     const fresh = [];
     let names = [];
     try {
-      names = fs10.readdirSync(dir);
+      names = fs11.readdirSync(dir);
     } catch {
       return fresh;
     }
     for (const name of names) {
       if (!/\.tmp\.\d+\.[0-9a-f]+$/i.test(name))
         continue;
-      const file = path14.join(dir, name);
+      const file = path15.join(dir, name);
       try {
-        if (now() - fs10.statSync(file).mtimeMs > ONE_HOUR_MS)
-          fs10.unlinkSync(file);
+        if (now() - fs11.statSync(file).mtimeMs > ONE_HOUR_MS)
+          fs11.unlinkSync(file);
       } catch {}
     }
     const files = names.filter((file) => file.endsWith(".json"));
     for (const name of files) {
-      const file = path14.join(dir, name);
+      const file = path15.join(dir, name);
       const entry = readEntry(file);
       if (!entry || now() - entry.createdAt > ttlMs || entry.createdAt - now() > ttlMs) {
         try {
-          fs10.unlinkSync(file);
+          fs11.unlinkSync(file);
         } catch {}
       } else {
         fresh.push({ file, entry });
@@ -11758,7 +11775,7 @@ function createNativeContinuityBridge(opts = {}) {
       const oldest = fresh.shift();
       if (oldest)
         try {
-          fs10.unlinkSync(oldest.file);
+          fs11.unlinkSync(oldest.file);
         } catch {}
     }
     return fresh;
@@ -11766,7 +11783,7 @@ function createNativeContinuityBridge(opts = {}) {
   const locked = (work) => {
     ensureDir(dir);
     try {
-      fs10.chmodSync(dir, 448);
+      fs11.chmodSync(dir, 448);
     } catch {}
     const release = acquireLockSync(lockTarget);
     try {
@@ -11784,13 +11801,13 @@ function createNativeContinuityBridge(opts = {}) {
         locked(() => {
           const target = fileFor(scope);
           try {
-            fs10.unlinkSync(target);
+            fs11.unlinkSync(target);
           } catch {}
           prune(1);
           const entry = { schemaVersion: 1, scope, text: boundedText, createdAt: now() };
           atomicWriteFileSync(target, JSON.stringify(entry));
           try {
-            fs10.chmodSync(target, 384);
+            fs11.chmodSync(target, 384);
           } catch {}
         });
       } catch (error2) {
@@ -11808,7 +11825,7 @@ function createNativeContinuityBridge(opts = {}) {
           if (!entry)
             return null;
           try {
-            fs10.unlinkSync(target);
+            fs11.unlinkSync(target);
           } catch {
             return null;
           }
@@ -11824,13 +11841,13 @@ function createNativeContinuityBridge(opts = {}) {
         locked(() => {
           if (scope) {
             try {
-              fs10.unlinkSync(fileFor(scope));
+              fs11.unlinkSync(fileFor(scope));
             } catch {}
             return;
           }
           for (const item of prune(0)) {
             try {
-              fs10.unlinkSync(item.file);
+              fs11.unlinkSync(item.file);
             } catch {}
           }
         });
@@ -12093,7 +12110,7 @@ function smartCompactExtension(pi) {
       const scrubber = new SecretScrubber(config.scrubSecrets, config.scrubPii);
       const title = scrubber.scrubText(params.title?.trim() || "Saved " + params.kind).value;
       const content = scrubber.scrubText(params.content).value;
-      const relatedPaths = (params.related_paths ?? []).map((path15) => scrubber.scrubText(path15).value);
+      const relatedPaths = (params.related_paths ?? []).map((path16) => scrubber.scrubText(path16).value);
       const status = params.status ?? "active";
       if (!ctx.hasUI) {
         return { content: [{ type: "text", text: "Project memory requires an interactive host confirmation; nothing changed." }], details: undefined };

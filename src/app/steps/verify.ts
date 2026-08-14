@@ -115,9 +115,8 @@ export async function verifyAndPatch(rc: SynthesizedRc): Promise<VerifiedRc> {
       rc.flags.verificationForced = true;
       rc.notify("Force apply: " + verification.gaps.length + " unresolved verification gap(s) accepted at " + verification.score + "/100", "warning");
     } else {
-      const gateError = new VerificationGateError(verification, initialScore, "post-synthesis");
-      gateError.detail = gateDiagnostics(rc);
-      throw gateError;
+      log.error("gate refused (post-synthesis): " + gateDiagnostics(rc));
+      throw new VerificationGateError(verification, initialScore, "post-synthesis");
     }
   }
   showProgressOverlay(rc.ctx, {

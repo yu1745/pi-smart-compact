@@ -12,7 +12,7 @@ import type { CompressionProfile, ProfileConfig } from "./types.ts";
  */
 export const VERSION = "9.2.1";
 /** Distinguishes this fork's builds in diagnostics output. */
-export const FORK_BUILD_TAG = "9.2.1-yu1745.3";
+export const FORK_BUILD_TAG = "9.2.1-yu1745.4";
 export const CHARS_PER_TOKEN = 3.8;
 export const MIN_COMPACTION_SAVING_RATIO = 0.10;
 export const ESTIMATOR_ROUNDING_TOLERANCE_TOKENS = 1;
