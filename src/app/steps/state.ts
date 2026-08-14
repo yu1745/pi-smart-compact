@@ -136,11 +136,19 @@ export function buildState(rc: VerifiedRc): StatedRc {
   rc.verificationProvenance = {
     ...rc.verificationProvenance,
     deterministicPatched: [...rc.verificationProvenance.deterministicPatched, ...postRepair.patched],
+    forced: rc.flags.verificationForced === true || undefined,
     finalScore: postVerification.score,
     remainingGaps: postVerification.gaps,
   };
   const failure = verificationFailureMessage(postVerification);
-  if (failure) throw new VerificationGateError(postVerification, postInitialScore, "post-state");
+  if (failure) {
+    if (rc.flags.forceApply) {
+      rc.flags.verificationForced = true;
+      rc.notify("Force apply: " + postVerification.gaps.length + " unresolved post-state verification gap(s) accepted at " + postVerification.score + "/100", "warning");
+    } else {
+      throw new VerificationGateError(postVerification, postInitialScore, "post-state");
+    }
+  }
 
   const detModified = extraction.modifiedFiles.map(f => f.path);
   const detRead = extraction.readFiles;

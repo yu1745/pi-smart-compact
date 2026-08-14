@@ -55,6 +55,16 @@ export interface CompactConfig {
   telemetryChannel: "stable" | "canary";
   adaptiveDamageFeedback: boolean;
   onlineDamageMonitor: boolean;
+  /**
+   * Opt-in escape hatch: when verification still fails after all repair
+   * attempts (deterministic repair, LLM patch, deterministic quality floor),
+   * proceed instead of throwing at the post-synthesis / post-state gates.
+   * The best available summary is kept, provenance is marked `forced`, a
+   * warning is shown, and `requireApproval` still gates the actual apply.
+   * The yield check is NOT bypassed. Fail-closed by default.
+   * Can also be enabled with SMART_COMPACT_FORCE_APPLY=1.
+   */
+  allowUnverifiedApply: boolean;
   /** File paths that must always survive compaction, regardless of what the
    *  LLM summary chooses to include. Surfaced in the summary's Files Read. */
   pinPaths: string[];
@@ -353,6 +363,8 @@ export interface VerificationProvenance {
   deterministicPatched: VerificationGap[];
   llmPatched: boolean;
   qualityFloorUsed?: boolean;
+  /** True when the run was force-applied past a failing verification gate. */
+  forced?: boolean;
   finalScore: number;
   remainingGaps: VerificationGap[];
 }

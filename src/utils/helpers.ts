@@ -65,7 +65,7 @@ export function validateSmartCompactConfig(sc: Record<string, unknown>): void {
     log.warn("smart-compact config: backupEnabled must be boolean, got " + typeof sc.backupEnabled);
     delete sc.backupEnabled;
   }
-  for (const key of ["requireApproval", "scrubSecrets", "scrubPii", "focusWeighting", "zeroCallEnabled", "contextGraphEnabled", "adaptiveDamageFeedback", "onlineDamageMonitor"] as const) {
+  for (const key of ["requireApproval", "scrubSecrets", "scrubPii", "focusWeighting", "zeroCallEnabled", "contextGraphEnabled", "adaptiveDamageFeedback", "onlineDamageMonitor", "allowUnverifiedApply"] as const) {
     if (key in sc && typeof sc[key] !== "boolean") {
       log.warn("smart-compact config: " + key + " must be boolean, got " + typeof sc[key]);
       delete sc[key];

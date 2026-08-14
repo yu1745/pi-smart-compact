@@ -727,7 +727,7 @@ export default function smartCompactExtension(pi: ExtensionAPI) {
         // Instead, store the summary in pendingRef and let the session_before_compact
         // hook apply it on the next natural compact (or auto-trigger).
         const outcome = await runSmartCompact({
-          ctx, summaryModel: sumModel, segModel: segModel ?? sumModel, verifyModel: verifyModel ?? sumModel, mode: resolvedMode,
+          ctx, config, summaryModel: sumModel, segModel: segModel ?? sumModel, verifyModel: verifyModel ?? sumModel, mode: resolvedMode,
           verbose, dryRun, pendingRef, isRunning, onNativeApplyError, autoTriggered: true, skipCompact: true,
           abortSignal: signal, focus, maxLlmCalls, maxLlmInputTokens, timeoutMs: maxLatencyMs,
         });

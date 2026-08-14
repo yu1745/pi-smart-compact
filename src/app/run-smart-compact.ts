@@ -156,6 +156,7 @@ function makeBase(opts: SmartCompactOptions): RcBase {
       autoTriggered: !!opts.autoTriggered,
       skipCompact: !!opts.skipCompact,
       force: !!opts.force,
+      forceApply: !!opts.config?.allowUnverifiedApply || /^(?:1|true)$/i.test(process.env.SMART_COMPACT_FORCE_APPLY ?? ""),
       overflowRecovery: !!opts.overflowRecovery,
     },
     userNote: opts.userNote,

@@ -1,5 +1,6 @@
-# Build output
-dist/
+# Build output (bundled entry is committed so Pi can load this git package directly)
+dist/*
+!dist/index.js
 
 # Backups
 *.backup

@@ -75,6 +75,10 @@ export interface RunFlags {
   autoTriggered: boolean;
   skipCompact: boolean;
   force: boolean;
+  /** True when allowUnverifiedApply (config or SMART_COMPACT_FORCE_APPLY=1) is enabled. */
+  forceApply: boolean;
+  /** Set when a failing verification gate was accepted under forceApply. */
+  verificationForced?: boolean;
   /** Pi is retrying a provider turn that exceeded the active model window. */
   overflowRecovery?: boolean;
 }

@@ -94,6 +94,7 @@ export const DEFAULT_CONFIG = {
   telemetryChannel: "stable" as const,
   adaptiveDamageFeedback: false,
   onlineDamageMonitor: true,
+  allowUnverifiedApply: false,
   pinPaths: [] as string[],
 };
 

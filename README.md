@@ -4,6 +4,17 @@
   <img src="https://raw.githubusercontent.com/alpertarhan/pi-smart-compact/main/docs/assets/banner.svg" alt="pi-smart-compact" width="860" />
 </a>
 
+> **Fork (yu1745) — v9.2.1-yu1745.1.** Adds an opt-in `allowUnverifiedApply`
+> switch so runs stuck at the verification gate can proceed: config
+> `smartCompact.allowUnverifiedApply: true` (in `~/.pi/agent/settings.json`) or
+> env `SMART_COMPACT_FORCE_APPLY=1`. All repair attempts still run first
+> (deterministic repair → LLM patch → quality floor); if verification still
+> fails, the best summary is kept, provenance is marked `forced`, and the
+> `requireApproval` screen still gates the actual apply. The yield check and
+> everything else are untouched. Also fixes the `smart_compact` tool path not
+> forwarding the resolved config to the pipeline. Upstream:
+> [alpertarhan/pi-smart-compact](https://github.com/alpertarhan/pi-smart-compact).
+
 [![CI](https://github.com/alpertarhan/pi-smart-compact/actions/workflows/ci.yml/badge.svg)](https://github.com/alpertarhan/pi-smart-compact/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/pi-smart-compact?color=60a5fa)](https://www.npmjs.com/package/pi-smart-compact)
 [![license](https://img.shields.io/npm/l/pi-smart-compact?color=22c55e)](https://github.com/alpertarhan/pi-smart-compact/blob/main/LICENSE)

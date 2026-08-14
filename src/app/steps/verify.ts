@@ -99,9 +99,17 @@ export async function verifyAndPatch(rc: SynthesizedRc): Promise<VerifiedRc> {
   }
 
   const failure = verificationFailureMessage(verification);
-  if (failure) throw new VerificationGateError(verification, initialScore, "post-synthesis");
+  if (failure) {
+    if (rc.flags.forceApply) {
+      rc.flags.verificationForced = true;
+      rc.notify("Force apply: " + verification.gaps.length + " unresolved verification gap(s) accepted at " + verification.score + "/100", "warning");
+    } else {
+      throw new VerificationGateError(verification, initialScore, "post-synthesis");
+    }
+  }
   showProgressOverlay(rc.ctx, {
-    phase: 4, phaseName: "Verify", detail: "Passed " + verification.score + "/100 · 0 unresolved gaps",
+    phase: 4, phaseName: "Verify",
+    detail: rc.flags.verificationForced ? "Forced at " + verification.score + "/100 · " + verification.gaps.length + " unresolved gap(s) accepted" : "Passed " + verification.score + "/100 · 0 unresolved gaps",
     explorationRounds: rc.explorationRounds,
   })
 
