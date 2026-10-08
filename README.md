@@ -26,6 +26,30 @@ this extension adds context hygiene and continuity policies around it.
 > These defaults (pressure-first cleanup, eager tool exposure, native tool
 > rows) ship with 10.1.0.
 
+## Fork: disabled for OpenAI Codex
+
+This fork disables Smart Compact (including the optional `rtk` entry point) when
+Pi's **active provider is exactly `openai-codex`**. It uses the actual
+`session_start` context model, not `settings.defaultProvider` or a GPT model-name
+heuristic. An unknown model fails closed. Before that event, only the provider
+lifecycle gate is registered: no original initialization, tools, commands,
+shortcuts, context/provider hooks, or compaction takeover. GPT models served by
+other providers remain supported.
+
+Switching an initialized runtime to Codex (or an unknown model) aborts its
+lifetime, runs shutdown cleanup, removes its tools from the active set, and
+re-registers them as `hidden`. Existing callbacks are guarded, including late
+registrations. **Pi has no tool-unregister API**: these old registrations and
+inert commands still exist until `/reload`; they are not physically deleted.
+Reload while using Codex for strictly zero Smart Compact tool/command
+registrations. Native Pi compaction is unaffected.
+
+Switching back does **not** restart a shut-down runtime or reconstruct its old
+tool exposure/active set. Select the supported provider, then **`/reload`** to
+initialize a fresh runtime from the normal settings/session state. The same
+reload is required when switching away from a disabled cold start. No automatic
+restore is claimed; already-completed work is not rolled back.
+
 ## What it does
 
 | Task | Use | Boundary |

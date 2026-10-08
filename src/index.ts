@@ -75,6 +75,7 @@ import { createSmartCompactPolicy } from "./app/smart-compact-policy.ts";
 import { createContextToolExposure, registerContextToolLoader } from "./app/lazy-tools.ts";
 import { registerNavigation, type NavigationController } from "./app/register-navigation.ts";
 import { registerAnchorCache } from "./app/anchor-cache.ts";
+import { withProviderGate } from "./app/provider-gate.ts";
 export { findModelById, resolveModels } from "./app/model-routing.ts";
 
 /** Provider-reported usage of the staged run for Pi's session totals; never a local estimate. */
@@ -133,6 +134,10 @@ function unwrapConsumed(
 }
 
 export default function smartCompactExtension(pi: ExtensionAPI) {
+ withProviderGate(pi, initialize);
+}
+
+function initialize(pi: ExtensionAPI) {
  // Encapsulated slot: producers call `.set(...)`, the event handler calls
  // `.consume(...)`. The lifecycle (set/consume/clear/expire/mismatch) lives
  // entirely inside the slot factory — see src/app/pending-slot.ts.

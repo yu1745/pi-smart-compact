@@ -40,7 +40,7 @@ const MODEL = {
   maxTokens: 4_096,
 } as any;
 
-function extension() {
+async function extension() {
   const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
   const commands = new Map<string, any>();
   const active = new Set<string>(["read", "smart_compact"]);
@@ -59,6 +59,7 @@ function extension() {
     appendEntry: () => { },
     events: { on: () => { }, emit: () => { } },
   } as any);
+  for (const handler of handlers.get("session_start") ?? []) await handler({ type: "session_start" }, context(false).ctx);
   return { handlers, commands };
 }
 
@@ -125,7 +126,7 @@ describe("no-UI modes", () => {
   });
 
   it("runs /smart-compact without arguments non-interactively instead of cancelling", async () => {
-    const { commands } = extension();
+    const { commands } = await extension();
     const harness = context(false);
     await commands.get("smart-compact").handler("", harness.ctx);
     expect(harness.customCalls).toHaveLength(0);
@@ -138,7 +139,7 @@ describe("no-UI modes", () => {
   });
 
   it("points /smart-compact dashboard at the text report outside the TUI", async () => {
-    const { commands } = extension();
+    const { commands } = await extension();
     const rpc = context(true);
     rpc.ctx.mode = "rpc";
     await commands.get("smart-compact").handler("dashboard", rpc.ctx);
@@ -152,7 +153,7 @@ describe("no-UI modes", () => {
   });
 
   it("reports storage and metrics without a UI instead of dropping them", async () => {
-    const { commands } = extension();
+    const { commands } = await extension();
     const json = context(false);
     json.ctx.mode = "json";
     await commands.get("smart-compact").handler("storage", json.ctx);
@@ -170,7 +171,7 @@ describe("no-UI modes", () => {
   });
 
   it("still opens the interactive picker when a UI exists", async () => {
-    const { commands } = extension();
+    const { commands } = await extension();
     const harness = context(true);
     await commands.get("smart-compact").handler("", harness.ctx);
     expect(harness.customCalls.length).toBeGreaterThan(0);

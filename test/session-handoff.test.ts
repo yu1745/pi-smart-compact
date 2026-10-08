@@ -164,13 +164,18 @@ describe("collectHandoffSources", () => {
 });
 
 describe("/smart-compact handoff", () => {
-  function command() {
+  async function command(ctx: ExtensionCommandContext) {
+    const handlers = new Map<string, any>();
+    let active: string[] = [];
     let registered: { handler(args: string, ctx: ExtensionCommandContext): Promise<void> } | undefined;
     smartCompactExtension({
       registerCommand: (name: string, definition: NonNullable<typeof registered>) => { if (name === "smart-compact") registered = definition; },
-      registerTool: () => {},
-      on: () => {},
-    } as unknown as ExtensionAPI); // Only registration hooks are reachable.
+      registerTool: (tool: any) => active.push(tool.name),
+      getActiveTools: () => active,
+      setActiveTools: (names: string[]) => { active = names; },
+      on: (name: string, handler: any) => handlers.set(name, handler),
+    } as unknown as ExtensionAPI); // Host registration and startup lifecycle hooks.
+    await handlers.get("session_start")({ type: "session_start" }, ctx);
     return registered!;
   }
 
@@ -179,10 +184,11 @@ describe("/smart-compact handoff", () => {
     const nextNotices: Array<{ message: string; level: string }> = [];
     const opened: Array<{ parentSession?: string; next: SessionManager }> = [];
     const ctx = {
+      model: { provider: "anthropic" },
       mode: "rpc", hasUI: true, cwd, sessionManager: sm,
       waitForIdle: async () => {},
       modelRegistry: { getAvailable: () => [] },
-      ui: { notify: (message: string, level: string) => notices.push({ message, level }) },
+      ui: { setStatus() {}, notify: (message: string, level: string) => notices.push({ message, level }) },
       newSession: async (options: Parameters<ExtensionCommandContext["newSession"]>[0] = {}) => {
         const next = SessionManager.inMemory(cwd);
         opened.push({ parentSession: options.parentSession, next });
@@ -204,7 +210,7 @@ describe("/smart-compact handoff", () => {
     withAnchor(sm);
     const { ctx, notices, nextNotices, opened } = context(sm);
 
-    await command().handler("handoff -- continue parser", ctx);
+    await (await command(ctx)).handler("handoff -- continue parser", ctx);
 
     expect(notices).toEqual([]);
     expect(opened).toHaveLength(1);
@@ -238,7 +244,7 @@ describe("/smart-compact handoff", () => {
     sm.appendMessage({ role: "user", content: "hello", timestamp: 1 });
     const { ctx, notices, opened } = context(sm);
 
-    await command().handler("handoff", ctx);
+    await (await command(ctx)).handler("handoff", ctx);
 
     expect(opened).toEqual([]);
     expect(notices).toEqual([{ message: "Nothing to hand off yet. Mark this point (Home › History & recovery › Session navigation) or add a note: /smart-compact handoff -- <note>", level: "warning" }]);
@@ -249,7 +255,7 @@ describe("/smart-compact handoff", () => {
     withAnchor(sm);
     const { ctx, notices, opened } = context(sm);
 
-    await command().handler("handoff dry-run -- continue parser", ctx);
+    await (await command(ctx)).handler("handoff dry-run -- continue parser", ctx);
 
     expect(opened).toEqual([]);
     expect(notices).toHaveLength(1);
@@ -270,7 +276,7 @@ describe("/smart-compact handoff", () => {
     const write = process.stderr.write;
     process.stderr.write = ((chunk: string) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
     try {
-      await command().handler("handoff dry-run -- continue parser", ctx);
+      await (await command(ctx)).handler("handoff dry-run -- continue parser", ctx);
     } finally {
       process.stderr.write = write;
     }

@@ -5,7 +5,7 @@ import { resetIssuesForTests } from "../src/utils/issues.ts";
 const disabled = process.env.RTK_DISABLED;
 afterEach(() => { resetIssuesForTests(); if (disabled === undefined) delete process.env.RTK_DISABLED; else process.env.RTK_DISABLED = disabled; });
 
-function harness(version = "rtk 0.50.0") {
+async function harness(version = "rtk 0.50.0") {
   const handlers = new Map<string, any>();
   const calls: string[][] = [];
   const statuses: string[] = [];
@@ -26,6 +26,7 @@ function harness(version = "rtk 0.50.0") {
   } as any);
   const controller = new AbortController();
   const ctx = {
+    model: { provider: "anthropic" },
     signal: controller.signal,
     hasUI: true,
     ui: {
@@ -34,6 +35,7 @@ function harness(version = "rtk 0.50.0") {
     },
     sessionManager: { getSessionId: () => "rtk-session" },
   };
+  await handlers.get("session_start")({ type: "session_start" }, ctx);
   const run = async (command = "git status", toolName = "bash") => {
     const event = { type: "tool_call", toolCallId: "command", toolName, input: { command, timeout: 60 } };
     const result = await handlers.get("tool_call")(event, ctx);
@@ -41,14 +43,14 @@ function harness(version = "rtk 0.50.0") {
     expect(event.input.timeout).toBe(60);
     return event.input.command;
   };
-  return { calls, statuses, notices, handlers, controller, run,
+  return { calls, statuses, notices, handlers, controller, ctx, run,
     outcome: (value: Partial<typeof outcome>) => { outcome = { ...outcome, ...value }; },
     during: (fn: () => void) => { during = fn; }, fail: () => { fail = true; } };
 }
 
 describe("opt-in RTK companion", () => {
   it.each([0, 3])("delegates once, accepting documented rewrite exit %s without executing bash", async code => {
-    const h = harness(); h.outcome({ code });
+    const h = await harness(); h.outcome({ code });
     // Version probe always requires success; advisory code applies only to rewrite.
     if (code === 3) { h.outcome({ code: 0 }); h.during(() => h.outcome({ code: 3 })); }
     expect(await h.run()).toBe("rtk git status");
@@ -57,7 +59,7 @@ describe("opt-in RTK companion", () => {
     expect(h.statuses).toHaveLength(0);
   });
   it("rewrites proven bare bun test with probed availability", async () => {
-    const h = harness();
+    const h = await harness();
     h.outcome({ stdout: "rtk bun test\n" });
     expect(await h.run("bun test")).toBe("rtk bun test");
     expect(await h.run("  bun test  ")).toBe("rtk bun test");
@@ -66,7 +68,7 @@ describe("opt-in RTK companion", () => {
 
 
   it.each(["rtk 0.22.9", "rtk 0.49.0", "garbage", "rtk 0.50.0-beta"])("passes through unknown/unsupported version %s", async version => {
-    const h = harness(version);
+    const h = await harness(version);
     expect(await h.run()).toBe("git status");
     expect(h.calls).toEqual([["--version"]]);
     // A one-time notice, never a permanent footer status.
@@ -81,13 +83,13 @@ describe("opt-in RTK companion", () => {
   it.each(["", "   ", "rtk git status", "  rtk git status", "git diff | wc -l", "git diff > patch", "git status && git diff",
     "git status; git diff", "git diff", "tsc --noEmit --pretty false", "git status --porcelain", "cargo test -- --list", "echo $(pwd)", "echo `pwd`", "echo $HOME", "git status\ngit diff", "git diff -- 'a|b'",
     "vitest run", "vitest", "bun test --watch", "bun test foo.test.js", "bun test --reporter=junit", "npm test", "node --test"])("does not rewrite shell composition or bypass: %s", async command => {
-    const h = harness();
+    const h = await harness();
     expect(await h.run(command)).toBe(command);
     expect(h.calls).toHaveLength(0);
   });
 
   it.each(["disabled", "aborted", "non-bash"])("does not probe RTK when %s", async kind => {
-    const h = harness();
+    const h = await harness();
     if (kind === "disabled") process.env.RTK_DISABLED = "1";
     if (kind === "aborted") h.controller.abort();
     expect(await h.run("git status", kind === "non-bash" ? "powershell" : "bash")).toBe("git status");
@@ -95,7 +97,7 @@ describe("opt-in RTK companion", () => {
   });
 
   it.each(["missing", "no-rule", "failed", "timeout", "empty", "unsafe", "long", "switch", "abort"])("keeps original on %s without retrying execution", async kind => {
-    const h = harness();
+    const h = await harness();
     if (kind === "missing") h.fail();
     h.during(() => {
       if (kind === "no-rule") h.outcome({ code: 1 });
@@ -104,7 +106,7 @@ describe("opt-in RTK companion", () => {
       if (kind === "empty") h.outcome({ stdout: "" });
       if (kind === "unsafe") h.outcome({ stdout: "rtk git status; echo unsafe" });
       if (kind === "long") h.outcome({ stdout: "rtk " + "x".repeat(40_000) });
-      if (kind === "switch") h.handlers.get("session_before_switch")();
+      if (kind === "switch") h.handlers.get("session_before_switch")({ type: "session_before_switch" }, h.ctx);
       if (kind === "abort") h.controller.abort();
     });
     expect(await h.run()).toBe("git status");

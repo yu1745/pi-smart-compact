@@ -60,11 +60,13 @@ try {
   writeFileSync(join(cwd, "evidence.txt"), "unchanged format\n".repeat(79) + "IMPORTANT_REPLACEMENT_041\n");
 
   let onToolCall: ((event: ToolCallEvent, ctx: any) => unknown) | undefined;
+  let onSessionStart: ((event: any, ctx: any) => unknown) | undefined;
   rtkCompanion({
-    on(name: string, handler: any) { if (name === "tool_call") onToolCall = handler; return () => {}; },
+    on(name: string, handler: any) { if (name === "tool_call") onToolCall = handler; if (name === "session_start") onSessionStart = handler; return () => {}; },
     exec: async (command: string, args: string[], options?: { timeout?: number }) => run(command, args, options?.timeout),
-  });
-  const ctx = { signal: new AbortController().signal, hasUI: false };
+  } as unknown as Parameters<typeof rtkCompanion>[0]);
+  const ctx = { model: { provider: "anthropic" }, signal: new AbortController().signal, hasUI: false };
+  await onSessionStart!({ type: "session_start" }, ctx);
   const cases = [];
   for (const [command, required] of [["git status", "evidence.txt"], ["git diff", "IMPORTANT_REPLACEMENT_041"],
     ["cargo test", "EVIDENCE_FAILURE_041"], ["tsc --noEmit --pretty false", "TS2322"],

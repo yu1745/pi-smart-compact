@@ -191,6 +191,11 @@ function makeBase(opts: SmartCompactOptions): RcBase {
 }
 
 export async function runSmartCompact(opts: SmartCompactOptions): Promise<CompactOutcome> {
+ // Include the provider gate's runtime lifetime, including manual commands
+ // which do not otherwise carry a tool/compaction event abort signal.
+ const contextSignal = opts.ctx.signal;
+ if (contextSignal) opts = { ...opts, abortSignal: opts.abortSignal
+  ? AbortSignal.any([opts.abortSignal, contextSignal]) : contextSignal };
  if (!opts.summaryModel || !opts.segModel) {
   if (!opts.autoTriggered) notifyUser(opts.ctx, "Model resolve failed", "error");
   return { kind: "skipped", reason: "model-unavailable" };

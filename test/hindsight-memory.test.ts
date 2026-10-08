@@ -53,7 +53,7 @@ function hindsightSettings(extra: Record<string, unknown> = {}): Record<string, 
   };
 }
 
-function setup(settings: Record<string, unknown>) {
+async function setup(settings: Record<string, unknown>) {
   writeSettings({ toolLoading: "eager", ...settings });
   const tools = new Map<string, any>();
   const active = new Set<string>(["read", "smart_recall", "smart_save_memory"]);
@@ -74,6 +74,7 @@ function setup(settings: Record<string, unknown>) {
   let approve = true;
   const ctx: any = {
     cwd: process.cwd(),
+    model: { provider: "anthropic", id: "test" },
     hasUI: true,
     getContextUsage: () => undefined,
     ui: {
@@ -88,7 +89,7 @@ function setup(settings: Record<string, unknown>) {
       getBranch: () => [{ id: "branch-root" }, { id: "branch-head" }],
     },
   };
-  for (const handler of handlers.get("session_start") ?? []) handler({}, ctx);
+  for (const handler of handlers.get("session_start") ?? []) await handler({ type: "session_start" }, ctx);
   const run = (name: string, params: Record<string, unknown>, context = ctx) =>
     tools.get(name).execute("id", params, new AbortController().signal, () => { }, context);
   return {
@@ -113,7 +114,7 @@ const FACT = "Use strict project tags for every Hindsight recall because shared 
 
 describe("hindsight memory backend", () => {
   it("never contacts a server with the default local backend", async () => {
-    const harness = setup({});
+    const harness = await setup({});
     const saved = await harness.save({ content: FACT });
     expect(saved.content[0].text).toContain("Saved project memory");
     expect(harness.confirmations[0].message).not.toContain("Destination");
@@ -122,7 +123,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("shows the exact remote destination in the confirmation and reports completion", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const saved = await harness.save({ title: "Tag scoping", content: FACT });
     const message = harness.confirmations[0].message;
     expect(message).toContain(fake.url + " (bank bank-a)");
@@ -140,7 +141,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("refuses non-interactive calls and rejected confirmations without any request", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const refused = await harness.save({ content: FACT }, { ...harness.ctx, hasUI: false });
     expect(refused.content[0].text).toContain("interactive host confirmation");
     harness.setApprove(false);
@@ -150,7 +151,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("scrubs secrets before they reach the server", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
     await harness.save({ content: FACT + " token " + token });
     await harness.recall({ query: "strict tags " + token });
@@ -159,7 +160,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("reports accepted-but-pending honestly and completes later via recall", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fake.retainStatus = "pending";
     const saved = await harness.save({ content: FACT });
     expect(saved.content[0].text).toContain("NOT yet searchable");
@@ -177,7 +178,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("reports definite server failure as FAILED and writes nothing to any other store", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fake.failNext.set("POST memories", 503);
     const failed = await harness.save({ content: FACT });
     expect(failed.content[0].text).toContain("Hindsight: FAILED");
@@ -186,7 +187,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("treats a lost response as unknown, retries with the same operation id, and never falls back to a local store", async () => {
-    const harness = setup(hindsightSettings({ hindsightTimeoutMs: 1_000 }));
+    const harness = await setup(hindsightSettings({ hindsightTimeoutMs: 1_000 }));
     fake.failNext.set("POST memories", -3);
     const unknown = await harness.save({ content: FACT });
     expect(unknown.content[0].text).toContain("outcome unknown");
@@ -204,14 +205,14 @@ describe("hindsight memory backend", () => {
   });
 
   it("reports an unreachable server as unknown, never completed", async () => {
-    const offline = setup(hindsightSettings({ hindsightBaseUrl: "http://127.0.0.1:1" }));
+    const offline = await setup(hindsightSettings({ hindsightBaseUrl: "http://127.0.0.1:1" }));
     const unknown = await offline.save({ content: FACT });
     expect(unknown.content[0].text).toContain("outcome unknown");
     expect(unknown.content[0].text).not.toContain("completed");
   });
 
   it("refuses to save when Hindsight is misconfigured and touches no store", async () => {
-    const harness = setup(hindsightSettings({ hindsightBankId: null }));
+    const harness = await setup(hindsightSettings({ hindsightBankId: null }));
     const saved = await harness.save({ content: FACT });
     expect(harness.confirmations).toHaveLength(0);
     expect(saved.content[0].text).toContain("Project memory not changed: Hindsight is not usable");
@@ -223,7 +224,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("refuses to delete while a retain may still be extracting, then deletes the owned document", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fake.retainStatus = "processing";
     const saved = await harness.save({ content: FACT });
     const pending = await harness.save({ status: "resolved", ref: saved.details.ref });
@@ -246,7 +247,7 @@ describe("hindsight memory backend", () => {
     expect(again.details.remote.operationId).not.toBe(saved.details.remote.operationId);
   });
   it("includes unknown receipts in the bounded recall refresh and frees them only on terminal status", async () => {
-    const harness = setup(hindsightSettings({ hindsightTimeoutMs: 1_000 }));
+    const harness = await setup(hindsightSettings({ hindsightTimeoutMs: 1_000 }));
     fake.failNext.set("POST memories", -3);
     const unknown = await harness.save({ content: FACT });
     expect(unknown.details.remote.state).toBe("unknown");
@@ -268,7 +269,7 @@ describe("hindsight memory backend", () => {
 
 
   it("reports a missing remote document without claiming deletion", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const saved = await harness.save({ content: "doc removed before resolve" });
     fake.docs.delete("bank-a/" + saved.details.remote.documentId);
     const resolved = await harness.save({ status: "resolved", ref: saved.details.ref });
@@ -276,16 +277,16 @@ describe("hindsight memory backend", () => {
   });
 
   it("refuses to retarget a ref saved on another bank instead of deleting there", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fake.retainStatus = "processing";
     const saved = await harness.save({ content: FACT });
-    const other = setup(hindsightSettings({ hindsightBankId: "bank-b" }));
+    const other = await setup(hindsightSettings({ hindsightBankId: "bank-b" }));
     await other.save({ status: "resolved", ref: saved.details.ref });
     expect(fake.requests.some((request) => request.method === "DELETE")).toBe(false);
   });
 
   it("does not offer deletion refs for documents without confirmed-save provenance", async () => {
-    const harness = setup(hindsightSettings({ contextGraphEnabled: false }));
+    const harness = await setup(hindsightSettings({ contextGraphEnabled: false }));
     const saved = await harness.save({ content: FACT });
     const owned = fake.docs.get("bank-a/" + saved.details.remote.documentId)!;
     fake.leakFacts.push({
@@ -300,7 +301,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("keeps Hindsight refs bound to their project and document", async () => {
-    const harness = setup(hindsightSettings({ contextGraphEnabled: false }));
+    const harness = await setup(hindsightSettings({ contextGraphEnabled: false }));
     const saved = await harness.save({ content: FACT });
     const foreignCwd = path.join(home, "another-project");
     fs.mkdirSync(foreignCwd);
@@ -325,7 +326,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("blocks deletion while a retain's outcome is unknown, until terminal status", async () => {
-    const harness = setup(hindsightSettings({ contextGraphEnabled: false }));
+    const harness = await setup(hindsightSettings({ contextGraphEnabled: false }));
     fake.retainStatus = "processing";
     const saved = await harness.save({ content: FACT });
     const operationId = saved.details.remote.operationId;
@@ -346,7 +347,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("blocks new remote saves instead of evicting unconfirmed receipts at the cap", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fs.mkdirSync(path.dirname(hindsightReceiptsFile()), { recursive: true });
     const receipts = Array.from({ length: MAX_HINDSIGHT_RECEIPTS }, (_, index) => ({
       key: "k" + index,
@@ -372,7 +373,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("refuses resolve and save on an unreadable receipt ledger and leaves it byte-identical", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fake.retainStatus = "processing";
     const saved = await harness.save({ content: FACT });
     const corrupt = '{"version":1,"receipts":[{"key":';
@@ -391,7 +392,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("keeps tools visible for hindsight when the local graph is disabled and never reads it", async () => {
-    const harness = setup(hindsightSettings({ contextGraphEnabled: false }));
+    const harness = await setup(hindsightSettings({ contextGraphEnabled: false }));
     expect([...harness.active]).toContain("smart_save_memory");
     const saved = await harness.save({ content: FACT });
     expect(harness.confirmations[0].message).not.toContain("Local copy");
@@ -405,14 +406,14 @@ describe("hindsight memory backend", () => {
 
   it("keeps the same fact isolated across two stores when switching backends", async () => {
     // Save once under the default local backend.
-    const localHarness = setup({});
+    const localHarness = await setup({});
     const localSaved = await localHarness.save({ content: FACT });
     expect(String(localSaved.details.ref).startsWith("local:")).toBe(true);
     expect(fs.existsSync(contextGraphFile())).toBe(true);
 
     // Switch to Hindsight: the same fact lands in the remote store only, and
     // recall never reads the local graph.
-    const remoteHarness = setup(hindsightSettings());
+    const remoteHarness = await setup(hindsightSettings());
     const remoteSaved = await remoteHarness.save({ content: FACT });
     expect(String(remoteSaved.details.ref).startsWith("hindsight:")).toBe(true);
     const remoteRecall = await remoteHarness.recall({ query: "strict project tags" });
@@ -427,14 +428,14 @@ describe("hindsight memory backend", () => {
     expect(deleted.details.remote.state).toBe("deleted");
 
     // Switching back finds the local fact exactly as it was saved.
-    const backHarness = setup({});
+    const backHarness = await setup({});
     const backRecall = await backHarness.recall({ query: "strict project tags" });
     expect(backRecall.details.results.map((item: { id: string }) => item.id))
       .toEqual([localSaved.details.memory.id]);
   });
 
   it("skips remote recall for session scope and surfaces remote recall failures", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const session = await harness.recall({ query: "tags", scope: "session" });
     expect(session.details.remote.state).toBe("skipped");
     fake.failNext.set("POST memories/recall", 500);
@@ -443,7 +444,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("marks only the receipts it checked as deleted when a save lands during the delete", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const saved = await harness.save({ content: FACT });
     fake.beforeNext.set("DELETE documents/:id", () => {
       const ledger = readLedger();
@@ -458,7 +459,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("reports a completed retain as unknown when the ledger is locked, and recall reconciles it", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const lock = hindsightReceiptsFile() + ".lock";
     fake.beforeNext.set("POST memories", () => fs.mkdirSync(lock));
     const saved = await harness.save({ content: FACT });
@@ -471,7 +472,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("still reports the deletion when the ledger is locked while the receipts are stamped", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const saved = await harness.save({ content: FACT });
     const lock = hindsightReceiptsFile() + ".lock";
     fake.beforeNext.set("DELETE documents/:id", () => fs.mkdirSync(lock));
@@ -482,7 +483,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("checks status with the operation id the server assigned", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     fake.assignOperationIds = true;
     fake.retainStatus = "pending";
     const saved = await harness.save({ content: FACT });
@@ -495,7 +496,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("drains receipts whose operation the server has reported missing for a day", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     await harness.save({ content: FACT });
     const ledger = readLedger();
     const base = { ...ledger.receipts[0], detail: "operation not found on server", state: "unknown" };
@@ -513,7 +514,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("keeps remote attributes and text from starting their own evidence lines", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const saved = await harness.save({ content: FACT });
     const doc = fake.docs.get("bank-a/" + saved.details.remote.documentId)!;
     fake.leakFacts.push({
@@ -530,7 +531,7 @@ describe("hindsight memory backend", () => {
   });
 
   it("caps rendered remote evidence and neutralizes injected wrapper tags", async () => {
-    const harness = setup(hindsightSettings());
+    const harness = await setup(hindsightSettings());
     const saved = await harness.save({ content: FACT });
     const doc = fake.docs.get("bank-a/" + saved.details.remote.documentId)!;
     for (let index = 0; index < 20; index++) {

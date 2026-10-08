@@ -45,16 +45,18 @@ const ALL_TOOLS = [
   "smart_compact",
 ];
 
-function registeredTools() {
+async function registeredTools() {
+  const handlers = new Map<string, any>();
   const tools = new Map<string, any>();
   const active = new Set<string>(ALL_TOOLS);
   smartCompactExtension({
     registerCommand: () => { },
     registerTool: (definition: any) => tools.set(definition.name, definition),
-    on: () => { },
+    on: (name: string, handler: any) => handlers.set(name, handler),
     getActiveTools: () => [...active],
     setActiveTools: () => { },
   } as any);
+  await handlers.get("session_start")({ type: "session_start" }, { model: { provider: "anthropic" }, cwd: process.cwd(), ui: { setStatus() {} }, sessionManager: { getSessionId: () => "session-a", getBranch: () => [] } });
   return tools;
 }
 
@@ -100,6 +102,7 @@ const text = (value: string) => [{ type: "text", text: value }];
 describe("tool row rendering through real execution", () => {
   function executeContext(approved = true) {
     return {
+      model: { provider: "anthropic" },
       cwd: process.cwd(),
       hasUI: true,
       getContextUsage: () => undefined,
@@ -120,7 +123,7 @@ describe("tool row rendering through real execution", () => {
       JSON.stringify({ smartCompact: { memoryBackend: "hindsight", toolLoading: "lazy" } }),
     );
     resetConfigCache();
-    const tools = registeredTools();
+    const tools = await registeredTools();
     const save = tools.get("smart_save_memory");
     const ref = "local:cg-0123456789abcdef01234567@0123456789abcdef01234567";
     const outcome = await save.execute(
@@ -142,7 +145,7 @@ describe("tool row rendering through real execution", () => {
   });
 
   it("empty plan and unknown usage render without fabricated numbers (real execute)", async () => {
-    const tools = registeredTools();
+    const tools = await registeredTools();
     const contextTool = tools.get("smart_context");
     const plan = await contextTool.execute("call-2", { action: "plan" }, undefined, undefined, executeContext());
     const planRendered = renderResult(contextTool, plan).join("\n");
@@ -158,8 +161,8 @@ describe("tool row rendering through real execution", () => {
     expect(statusRendered).not.toContain("NaN");
   });
 
-  it("a confirmed remote delete renders green; already-absent renders skipped (real details shapes)", () => {
-    const tools = registeredTools();
+  it("a confirmed remote delete renders green; already-absent renders skipped (real details shapes)", async () => {
+    const tools = await registeredTools();
     const save = tools.get("smart_save_memory");
     const deleted = renderResult(save, {
       content: text("Hindsight: deleted document psc-cg-fake (1 memory unit)."),
@@ -174,8 +177,8 @@ describe("tool row rendering through real execution", () => {
 });
 
 describe("tool row rendering (all six tools, native hooks)", () => {
-  it("call rows: partial args never print 'undefined'; hostile control args are sanitized", () => {
-    const tools = registeredTools();
+  it("call rows: partial args never print 'undefined'; hostile control args are sanitized", async () => {
+    const tools = await registeredTools();
     for (const name of ["smart_tools", "smart_context", "smart_navigation"]) {
       const call = renderCall(tools.get(name), {}).join("\n");
       expect(call).not.toContain("undefined");
@@ -198,8 +201,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(hostileNav).toContain("view");
   });
 
-  it("error rows keep ALL text parts when expanded, first part when collapsed", () => {
-    const tools = registeredTools();
+  it("error rows keep ALL text parts when expanded, first part when collapsed", async () => {
+    const tools = await registeredTools();
     const save = tools.get("smart_save_memory");
     const errored = {
       content: [
@@ -221,8 +224,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     }
   });
 
-  it("registers render hooks on all six Smart Compact tools", () => {
-    const tools = registeredTools();
+  it("registers render hooks on all six Smart Compact tools", async () => {
+    const tools = await registeredTools();
     for (const name of [
       "smart_recall",
       "smart_save_memory",
@@ -237,8 +240,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     }
   });
 
-  it("save rows: completed is searchable, accepted is pending with ref, unknown keeps op id, failures stay visible", () => {
-    const tools = registeredTools();
+  it("save rows: completed is searchable, accepted is pending with ref, unknown keeps op id, failures stay visible", async () => {
+    const tools = await registeredTools();
     const save = tools.get("smart_save_memory");
 
     const completed = renderResult(save, {
@@ -307,8 +310,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(declined).not.toContain("<success>");
   });
 
-  it("save resolve outcomes: only positive evidence is green; ref-only refusals never are", () => {
-    const tools = registeredTools();
+  it("save resolve outcomes: only positive evidence is green; ref-only refusals never are", async () => {
+    const tools = await registeredTools();
     const save = tools.get("smart_save_memory");
 
     const localClosed = renderResult(save, {
@@ -363,8 +366,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(refusal).not.toContain("<success>");
   });
 
-  it("save call row never shows the fact content", () => {
-    const tools = registeredTools();
+  it("save call row never shows the fact content", async () => {
+    const tools = await registeredTools();
     const save = tools.get("smart_save_memory");
     const call = renderCall(save, {
       kind: "decision",
@@ -375,8 +378,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(call).not.toContain("SECRET-FACT-CONTENT");
   });
 
-  it("recall rows: counts, prior-save buckets from the existing refresh, and failures", () => {
-    const tools = registeredTools();
+  it("recall rows: counts, prior-save buckets from the existing refresh, and failures", async () => {
+    const tools = await registeredTools();
     const recall = tools.get("smart_recall");
 
     const ok = renderResult(recall, {
@@ -412,8 +415,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(local).toContain("[decision] Queue bounds");
   });
 
-  it("context rows: readable status/plan, queued edits never render as applied", () => {
-    const tools = registeredTools();
+  it("context rows: readable status/plan, queued edits never render as applied", async () => {
+    const tools = await registeredTools();
     const context = tools.get("smart_context");
 
     const status = renderResult(context, {
@@ -494,8 +497,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(rawExpanded).toContain("Ref: hindsight:cg-tail@digest");
   });
 
-  it("navigation rows: pivot stays queued, anchors show counts, no carryover leaks", () => {
-    const tools = registeredTools();
+  it("navigation rows: pivot stays queued, anchors show counts, no carryover leaks", async () => {
+    const tools = await registeredTools();
     const navigation = tools.get("smart_navigation");
 
     const pivot = renderResult(navigation, {
@@ -536,8 +539,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(viewExpanded).toContain("[{name: 'a'}]");
   });
 
-  it("compact rows: staged and dry-run are never success; skipped and cancelled stay visible", () => {
-    const tools = registeredTools();
+  it("compact rows: staged and dry-run are never success; skipped and cancelled stay visible", async () => {
+    const tools = await registeredTools();
     const compact = tools.get("smart_compact");
 
     const staged = renderResult(compact, {
@@ -569,8 +572,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(skipped).toContain("below threshold");
   });
 
-  it("smart_tools rows: group status with availability, load and unload states", () => {
-    const tools = registeredTools();
+  it("smart_tools rows: group status with availability, load and unload states", async () => {
+    const tools = await registeredTools();
     const smartTools = tools.get("smart_tools");
 
     const status = renderResult(smartTools, {
@@ -602,8 +605,8 @@ describe("tool row rendering (all six tools, native hooks)", () => {
     expect(loaded).toContain("smart_recall");
   });
 
-  it("degrades safely: missing details, errors, control characters, theme change, widths", () => {
-    const tools = registeredTools();
+  it("degrades safely: missing details, errors, control characters, theme change, widths", async () => {
+    const tools = await registeredTools();
     const recall = tools.get("smart_recall");
     const save = tools.get("smart_save_memory");
 

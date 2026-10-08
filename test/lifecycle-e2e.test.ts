@@ -212,6 +212,7 @@ describe("extension lifecycle end to end", () => {
         }) as any,
     });
 
+    await dispatch(handlers, "session_start", { type: "session_start" }, ctx);
     const before = (event: any, ctx: any) => dispatch(handlers, "session_before_compact", event, ctx);
     const response = (await before(
       { reason: "threshold", signal: new AbortController().signal },
@@ -428,6 +429,7 @@ describe("extension lifecycle end to end", () => {
       getContextUsage: () => ({ tokens: 140_000 }),
       ui: { setStatus() {}, notify() {}, setWidget() {} },
     };
+    await dispatch(handlers, "session_start", { type: "session_start" }, ctx);
     const event: any = { type: "turn_end", outcome: "completed", entries: [], context: { pendingMessages: [] }, toolResults: [] };
     for (const handler of handlers.get("turn_end") ?? []) {
       const result: any = await handler(event, ctx);
@@ -473,6 +475,7 @@ describe("extension lifecycle end to end", () => {
         },
         registerTool: (tool: any) => {
           tools.set(tool.name, tool);
+          if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
         },
         getActiveTools: () => [...activeTools],
         getAllTools: () => [...tools.values()],
@@ -496,7 +499,7 @@ describe("extension lifecycle end to end", () => {
       },
     );
     smartCompactExtension(extensionApi as any);
-    activeTools = [...tools.keys()]; // Pi activates every registered tool until an owner narrows it.
+    // Pi activates tools as deferred registration occurs on session_start.
 
     const header = (id: string) => ({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-08-09T00:00:00.000Z", cwd });
     const branch = activeBranch();

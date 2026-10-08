@@ -211,6 +211,7 @@ describe("smart compact runtime policy", () => {
     } as any);
     let compactRequests = 0;
     const ctx = {
+      model: { provider: "anthropic", id: "test" },
       sessionManager: {
         getBranch: () => branch,
         getSessionId: () => "policy-session",

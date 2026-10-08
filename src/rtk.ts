@@ -4,8 +4,13 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { reportIssue } from "./utils/issues.ts";
+import { withProviderGate } from "./app/provider-gate.ts";
 
-export default function rtkCompanion(pi: Pick<ExtensionAPI, "on" | "exec">): void {
+export default function rtkCompanion(pi: ExtensionAPI): void {
+  withProviderGate(pi, initialize);
+}
+
+function initialize(pi: Pick<ExtensionAPI, "on" | "exec">): void {
   let generation = 0;
   let available: Promise<boolean> | undefined;
   const reset = () => { generation++; available = undefined; };

@@ -30,7 +30,7 @@ afterEach(() => {
   resetConfigCache();
 });
 
-function setup() {
+async function setup() {
   const agentDir = path.join(home, ".pi", "agent");
   fs.mkdirSync(agentDir, { recursive: true });
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
@@ -59,6 +59,7 @@ function setup() {
   let approve = true;
   const ctx = {
     cwd: path.join(home, "project-a"),
+    model: { provider: "anthropic", id: "test" },
     hasUI: true,
     getContextUsage: () => undefined,
     ui: {
@@ -81,7 +82,7 @@ function setup() {
     },
   });
   // Other host context fields are unreachable in the memory tool path.
-  for (const handler of handlers.get("session_start") ?? []) handler({}, hostContext);
+  for (const handler of handlers.get("session_start") ?? []) await handler({ type: "session_start" }, hostContext);
   const run = async (name: string, params: Record<string, unknown>, signal?: AbortSignal) => {
     if (!active.includes(name)) throw new Error(name + " is unavailable to the model");
     const result = await tools.get(name)!.execute("id", params, signal, () => { }, hostContext);
@@ -102,7 +103,7 @@ const memoryDir = () => path.join(home, ".pi", "agent", "smart-compact-memory", 
 
 describe("Mnemopi confirmed project memory", () => {
   it("does not create a memory store without host consent, including cancellation during confirmation", async () => {
-    const harness = setup();
+    const harness = await setup();
     harness.ctx.hasUI = false;
     expect((await harness.save({ content: FACT })).content[0].text).toContain("interactive host confirmation");
     harness.ctx.hasUI = true;
@@ -116,7 +117,7 @@ describe("Mnemopi confirmed project memory", () => {
   });
 
   it("stores the confirmed scrubbed fact once, across sessions and normalized duplicate inputs", async () => {
-    const harness = setup();
+    const harness = await setup();
     const secret = "sk-" + "a1b2c3d4e5".repeat(4);
     const saved = await harness.save({ title: "Project boundary", content: FACT + " token=" + secret });
     expect(saved.details.mnemopi.state).toBe("saved");
@@ -136,7 +137,7 @@ describe("Mnemopi confirmed project memory", () => {
   });
 
   it("isolates projects and kinds, and resolves only the exact approved fact", async () => {
-    const harness = setup();
+    const harness = await setup();
     const decision = await harness.save({ content: FACT });
     const warning = await harness.save({ kind: "warning", content: FACT });
     harness.ctx.cwd = path.join(home, "project-b");
@@ -158,7 +159,7 @@ describe("Mnemopi confirmed project memory", () => {
   }, 30_000);
 
   it("serializes concurrent normalized duplicate saves from separate workers", async () => {
-    const harness = setup();
+    const harness = await setup();
     const outcomes = await Promise.all([
       harness.save({ content: FACT }),
       harness.save({ content: FACT.toUpperCase() }),
@@ -191,7 +192,7 @@ describe("Mnemopi confirmed project memory", () => {
     const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
     try {
       Object.assign(process.env, overrides);
-      const harness = setup();
+      const harness = await setup();
       const saved = await harness.save({ content: FACT });
       expect(saved.details.mnemopi.state).toBe("saved");
       const recalled = await harness.recall({ query: "violet quartz" });
@@ -231,7 +232,7 @@ describe("Mnemopi confirmed project memory", () => {
 
   it.skipIf(!resolveBunExecutable())("runs the worker via the package-owned Bun dependency even without PATH", async () => {
     const owned = resolveBunExecutable();
-    const harness = setup();
+    const harness = await setup();
     const originalPath = process.env.PATH;
     process.env.PATH = home;
     try {
@@ -244,7 +245,7 @@ describe("Mnemopi confirmed project memory", () => {
   });
 
   it("surfaces a busy database lock cause without stealing or removing it", async () => {
-    const harness = setup();
+    const harness = await setup();
     const dbPath = mnemopiTarget(
       { mnemopiDataDir: null },
       deriveProjectIdFromCwd(path.join(home, "project-a"))!,
@@ -262,7 +263,7 @@ describe("Mnemopi confirmed project memory", () => {
   });
 
   it("returns target-bound refs on saves and recalls and refuses retargeting", async () => {
-    const harness = setup();
+    const harness = await setup();
     const saved = await harness.save({ content: FACT });
     const recalled = await harness.recall({ query: "violet quartz" });
     expect(saved.details.mnemopi.memoryId).toBe(recalled.details.mnemopi.facts[0].memoryId);
@@ -286,7 +287,7 @@ describe("Mnemopi confirmed project memory", () => {
     const resolved = await harness.save({ status: "resolved", ref: other.details.ref });
     expect(resolved.details.mnemopi.closed).toBe(true);
     expect((await harness.recall({ query: "violet quartz" })).details.mnemopi.facts).toEqual([]);
-    const original = await setup().recall({ query: "violet quartz" });
+    const original = await (await setup()).recall({ query: "violet quartz" });
     expect(original.details.mnemopi.facts.map(fact => fact.id)).toEqual([saved.details.mnemopi.id]);
   });
 });

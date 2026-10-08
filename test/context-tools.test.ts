@@ -37,7 +37,7 @@ function writeSmartCompactSettings(settings: Record<string, unknown>): void {
   resetConfigCache();
 }
 
-function registeredTools(options?: {
+async function registeredTools(options?: {
   contextGraphEnabled?: boolean;
   activeTools?: string[];
 }) {
@@ -63,20 +63,14 @@ function registeredTools(options?: {
       for (const name of names) active.add(name);
     },
   } as any);
+  for (const handler of handlers.get("session_start") ?? []) await handler({ type: "session_start" }, context());
   return { tools, active, handlers };
 }
 
 
-/** Mirrors the real lifecycle: register finishes, then session_start fires. */
-function started(tools: ReturnType<typeof registeredTools>) {
-  for (const handler of tools.handlers.get("session_start") ?? []) {
-    handler({}, context());
-  }
-  return tools;
-}
-
 function context(approved = true, cwd = process.cwd()) {
   return {
+    model: { provider: "anthropic", id: "test" },
     cwd,
     hasUI: true,
     getContextUsage: () => undefined,
@@ -93,12 +87,12 @@ function context(approved = true, cwd = process.cwd()) {
 
 describe("context memory tools", () => {
   it("loads memory on demand without creating a store and refuses disabled local memory", async () => {
-    const disabled = started(registeredTools({ contextGraphEnabled: false }));
+    const disabled = await registeredTools({ contextGraphEnabled: false });
     await expect(disabled.tools.get("smart_tools").execute("load-disabled", { action: "load", group: "memory" }, undefined, undefined, context())).rejects.toThrow();
     expect([...disabled.active]).toEqual(["read", "smart_tools"]);
     expect(fs.existsSync(contextGraphFile())).toBe(false);
 
-    const empty = started(registeredTools({ contextGraphEnabled: true }));
+    const empty = await registeredTools({ contextGraphEnabled: true });
     expect([...empty.active]).toEqual(["read", "smart_tools"]);
     await empty.tools.get("smart_tools").execute("load-memory", { action: "load", group: "memory" }, undefined, undefined, context());
     expect([...empty.active]).toEqual(["read", "smart_tools", "smart_recall", "smart_save_memory"]);
@@ -106,19 +100,19 @@ describe("context memory tools", () => {
   });
 
   it("keeps the host allowlist when loading memory after permission is enabled", async () => {
-    const extension = started(registeredTools({
+    const extension = await registeredTools({
       contextGraphEnabled: false,
       activeTools: ["read", "smart_tools", "smart_save_memory"],
-    }));
+    });
     expect([...extension.active]).toEqual(["read", "smart_tools"]);
     writeContextGraphSetting(true);
-    for (const handler of extension.handlers.get("session_start") ?? []) handler({}, context());
+    for (const handler of extension.handlers.get("session_start") ?? []) await handler({ type: "session_start" }, context());
     await extension.tools.get("smart_tools").execute("load", { action: "load", group: "memory" }, undefined, undefined, context());
     expect([...extension.active]).toEqual(["read", "smart_tools", "smart_save_memory"]);
   });
 
   it("saves scrubbed memory and recalls it from the current project", async () => {
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     const ctx = context();
     const token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
     const saved = await tools.get("smart_save_memory").execute(
@@ -178,7 +172,7 @@ describe("context memory tools", () => {
     expect(after.details.results).toEqual([]);
   });
   it("resolves a saved fact by its stable ref, not the truncated recall preview", async () => {
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     const ctx = context();
     const content = "r".repeat(1_307) + " repro-endpoint";
     const saved = await tools.get("smart_save_memory").execute(
@@ -223,7 +217,7 @@ describe("context memory tools", () => {
 
   it("uses current privacy settings when confirming a stored ref without changing its identity", async () => {
     writeSmartCompactSettings({ scrubSecrets: false });
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     const ctx = context();
     const token = "sk-" + "test".repeat(12);
     const saved = await tools.get("smart_save_memory").execute("save-unscrubbed", {
@@ -244,7 +238,7 @@ describe("context memory tools", () => {
   });
 
   it("refuses content-only resolve instead of silently matching nothing", async () => {
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     const ctx = context();
     const saved = await tools.get("smart_save_memory").execute(
       "save-noref",
@@ -271,9 +265,10 @@ describe("context memory tools", () => {
   });
 
   it("keeps stores isolated when switching backends: Mnemopi never reads or changes the local graph", async () => {
-    const { tools } = registeredTools({ contextGraphEnabled: true });
+    const { tools } = await registeredTools({ contextGraphEnabled: true });
     const ctx = context();
     const signal = new AbortController().signal;
+    await tools.get("smart_tools").execute("load-memory", { action: "load", group: "memory" }, signal, () => {}, ctx);
     const saved = await tools.get("smart_save_memory").execute(
       "save-cross",
       { kind: "decision", content: "Cross backend survivor fact about quartz relays" },
@@ -318,7 +313,7 @@ describe("context memory tools", () => {
   });
 
   it("never resolves refs with removed or changed targets", async () => {
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     const ctx = context();
     const signal = new AbortController().signal;
     const save = tools.get("smart_save_memory");
@@ -338,7 +333,7 @@ describe("context memory tools", () => {
   });
 
   it("fails closed for project memory save and recall from HOME or root", async () => {
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     for (const cwd of [home, path.parse(home).root]) {
       const ctx = context(true, cwd);
       const saved = await tools.get("smart_save_memory").execute(
@@ -368,7 +363,7 @@ describe("context memory tools", () => {
   });
 
   it("shows the full scrubbed content before an unapproved long memory write", async () => {
-    const { tools } = registeredTools();
+    const { tools } = await registeredTools();
     const content = "a".repeat(850) + " visible-confirmation-tail";
     let confirmation = "";
     const ctx = context();
@@ -410,7 +405,7 @@ describe("context memory tools", () => {
     process.env.HOME = isolatedHome;
     fs.mkdirSync(contextGraphFile(), { recursive: true });
     try {
-      const save = registeredTools().tools.get("smart_save_memory");
+      const save = (await registeredTools()).tools.get("smart_save_memory");
       let failure: unknown;
       try {
         await save.execute(
@@ -434,7 +429,7 @@ describe("context memory tools", () => {
   });
 
   it("refuses memory writes in a non-interactive host", async () => {
-    const save = registeredTools().tools.get("smart_save_memory");
+    const save = (await registeredTools()).tools.get("smart_save_memory");
     const ctx = { ...context(), hasUI: false };
     const result = await save.execute(
       "save-3",

@@ -7,6 +7,17 @@ import os from "node:os";
 import path from "node:path";
 import { resetConfigCache } from "../src/utils/config.ts";
 
+async function startExtension(api: any) {
+  const handlers = new Map<string, any>();
+  let active = ["smart_compact"];
+  smartCompactExtension({ getActiveTools: () => active, setActiveTools: (names: string[]) => { active = names; }, ...api, on: (name: string, handler: any) => handlers.set(name, handler) });
+  await handlers.get("session_start")({ type: "session_start" }, {
+    model: { provider: "openai", id: "test" },
+    sessionManager: { getSessionId: () => "index-tool", getBranch: () => [] },
+    ui: { setStatus() {}, notify() {} },
+  });
+}
+
 describe("smart_compact tool cancellation", () => {
   it("explains the actual threshold, model window, and manual early-compaction option", async () => {
     let tool: any;
@@ -55,7 +66,7 @@ describe("smart_compact tool cancellation", () => {
   it("keeps manual settings explicit when TUI is unavailable", async () => {
     let command: any;
     const notifications: Array<{ message: string; level: string }> = [];
-    smartCompactExtension({
+    await startExtension({
       registerCommand: (name: string, definition: any) => {
         if (name === "smart-compact") command = definition;
       },
@@ -64,6 +75,7 @@ describe("smart_compact tool cancellation", () => {
     } as any);
 
     await command.handler("settings", {
+      model: { provider: "openai", id: "test" },
       mode: "rpc",
       waitForIdle: async () => {},
       modelRegistry: { getAvailable: () => [] },
@@ -82,9 +94,9 @@ describe("smart_compact tool cancellation", () => {
     ]);
   });
 
-  it("publishes mode and aggregate token-budget controls", () => {
+  it("publishes mode and aggregate token-budget controls", async () => {
     let tool: any;
-    smartCompactExtension({
+    await startExtension({
       registerCommand: () => {},
       registerTool: (definition: any) => {
         if (definition.name === "smart_compact") tool = definition;
@@ -188,7 +200,7 @@ describe("smart_compact tool cancellation", () => {
 
   it("does not start the pipeline when the host signal is already aborted", async () => {
     let tool: any;
-    smartCompactExtension({
+    await startExtension({
       registerCommand: () => {
         /* noop */
       },
